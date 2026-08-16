@@ -172,7 +172,10 @@ form="$(jq -nc \
   '{exposedLocal: true, localSubdomain: $sub, openPort: true, port: $port}')"
 
 if us_runtipi_app_install "$urn" "$form"; then
-  us_ok "AdGuard Home installed and running"
+  # The install may have adopted a different URN than the one guessed above;
+  # the manifest must record the app Runtipi actually has.
+  urn="${US_RUNTIPI_RESOLVED_URN:-$urn}"
+  us_ok "AdGuard Home installed and running (${urn})"
 else
   us_error "AdGuard installation failed for URN '${urn}'."
   us_error "If the app store slug '${store_slug}' is wrong, no such app exists there."
