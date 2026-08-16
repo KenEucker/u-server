@@ -415,6 +415,19 @@ us_runtipi_app_status() {
     jq -r --arg u "$urn" '.installed[]? | select(.app.urn == $u) | .app.status // empty'
 }
 
+# us_runtipi_app_urn_for_name <appName>
+# The URN an app is actually installed under, whatever store it came from.
+# Prints nothing when the app is not installed. Exists because the store slug
+# is discovered, not fixed: "adguard:migrated" and "adguard:default" are the
+# same app, and telling them apart matters before posting a second install.
+us_runtipi_app_urn_for_name() {
+  local name="$1" json
+  json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)" || return 1
+  printf '%s' "$json" | jq -r --arg n "$name" \
+    'first(.installed[]? | select((.app.urn // "") | startswith($n + ":")) | .app.urn) // empty' \
+    2>/dev/null || true
+}
+
 # us_runtipi_app_install <urn> <form-json>
 # There is deliberately no `runtipi app install` subcommand upstream, so this
 # posts to the same endpoint the web UI uses. The form body accepts
@@ -426,6 +439,17 @@ us_runtipi_app_install() {
   if us_runtipi_app_installed "$urn"; then
     us_ok "App '${urn}' already installed"
     return 0
+  fi
+
+  # Same app under a different store slug. Posting another install would ask
+  # Runtipi to add an app it already has, so stop and name the URN it recorded.
+  local recorded
+  recorded="$(us_runtipi_app_urn_for_name "${urn%%:*}" 2>/dev/null || true)"
+  if [[ -n "$recorded" && "$recorded" != "$urn" ]]; then
+    us_error "'${urn%%:*}' is already installed as '${recorded}', not '${urn}'."
+    us_error "The app store slug in use here is not the one Runtipi recorded."
+    us_error "Set the matching slug (see: sudo ./doctor.sh --runtipi) and rerun."
+    return 1
   fi
 
   if [[ "$US_DRY_RUN" == "1" ]]; then
@@ -441,11 +465,55 @@ us_runtipi_app_install() {
   us_runtipi_app_wait_status "$urn" running 900
 }
 
+# _us_runtipi_installed_report <apps-installed-json>
+# One "<urn>  <status>" line per installed app, for diagnostics. Falls back to
+# a raw excerpt when the filter yields nothing, which is the signal that the
+# response shape itself has moved rather than that no apps are installed.
+_us_runtipi_installed_report() {
+  local json="$1" report
+  report="$(printf '%s' "$json" |
+    jq -r '.installed[]? | "    \(.app.urn // "<no .app.urn>")  \(.app.status // "<no .app.status>")"' \
+      2>/dev/null || true)"
+  if [[ -n "$report" ]]; then
+    printf '%s' "$report"
+  else
+    printf '    (no .installed[] entries; raw response begins: %s)' "${json:0:300}"
+  fi
+}
+
 # us_runtipi_app_wait_status <urn> <wanted> <timeout>
+#
+# An app whose URN never matches reports an empty status, which is neither the
+# wanted state nor a failure state, so the loop simply waits out the whole
+# timeout and then blames the install. That is indistinguishable, from the
+# outside, from a slow image pull -- and it is wrong precisely when the app is
+# up and healthy in the dashboard. So: report every state change, nag with the
+# URNs actually present once waiting stops looking like normal progress, and
+# print them again on timeout.
 us_runtipi_app_wait_status() {
-  local urn="$1" want="$2" timeout="${3:-600}" waited=0 status
+  local urn="$1" want="$2" timeout="${3:-600}" waited=0 interval=5
+  local json status last_seen="" nagged=0 api_failures=0
+
   while ((waited < timeout)); do
-    status="$(us_runtipi_app_status "$urn" 2>/dev/null || true)"
+    if json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)"; then
+      status="$(printf '%s' "$json" |
+        jq -r --arg u "$urn" '.installed[]? | select(.app.urn == $u) | .app.status // empty' \
+          2>/dev/null || true)"
+    else
+      json=""
+      status=""
+      api_failures=$((api_failures + 1))
+      if ((api_failures == 3)); then
+        us_warn "Cannot read apps/installed (${api_failures} consecutive failures); still waiting."
+      fi
+    fi
+    [[ -n "$json" ]] && api_failures=0
+
+    if [[ "$status" != "$last_seen" ]]; then
+      us_info "App '${urn}': ${status:-not listed yet}"
+      last_seen="$status"
+    fi
+
     case "$status" in
       "$want")
         us_ok "App '${urn}' is ${want}"
@@ -457,10 +525,30 @@ us_runtipi_app_wait_status() {
         return 1
         ;;
     esac
-    sleep 5
-    waited=$((waited + 5))
+
+    # Absent from the list well after the install was accepted means the URN
+    # being polled is not the URN Runtipi recorded. Say so, with the evidence.
+    if [[ -z "$status" ]] && ((waited >= 120)) && ((nagged == 0)) && [[ -n "$json" ]]; then
+      nagged=1
+      us_warn "'${urn}' is still not listed as installed after ${waited}s."
+      us_warn "Runtipi currently reports these apps:"
+      us_warn "$(_us_runtipi_installed_report "$json")"
+      us_warn "If the app IS there under a different URN, this wait is watching the"
+      us_warn "wrong name and will time out even though the app is fine."
+    fi
+
+    sleep "$interval"
+    waited=$((waited + interval))
+    if ((waited % 60 == 0)); then
+      us_info "Waiting for '${urn}' to be ${want}: ${waited}s/${timeout}s (now: ${status:-not listed})"
+    fi
   done
-  us_error "App '${urn}' did not reach '${want}' within ${timeout}s (last state: ${status:-unknown})."
+
+  us_error "App '${urn}' did not reach '${want}' within ${timeout}s (last state: ${last_seen:-never listed})."
+  if [[ -n "${json:-}" ]]; then
+    us_error "Apps Runtipi reports as installed:"
+    us_error "$(_us_runtipi_installed_report "$json")"
+  fi
   return 1
 }
 
