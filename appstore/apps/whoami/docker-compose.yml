@@ -1,0 +1,24 @@
+# The service-agnostic proof.
+#
+# Nothing in this file references u-server, Project NOMAD or Meridian. It is an
+# ordinary upstream container with an internal port. Everything else —
+# whoami.home.arpa resolving, Traefik routing to it, TLS later — is provided by
+# the platform purely because the app is registered and exposed locally.
+#
+# If this app is reachable at its home.arpa name, the architecture works for
+# any Docker application.
+
+services:
+  whoami:
+    image: traefik/whoami:v1.12.0
+    restart: unless-stopped
+    environment:
+      # Makes the echoed output identify itself, so a browser hitting
+      # whoami.home.arpa visibly proves which container answered.
+      WHOAMI_NAME: u-server routing test
+    x-runtipi:
+      is_main: true
+      internal_port: 80
+
+x-runtipi:
+  schema_version: 2

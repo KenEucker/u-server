@@ -1,0 +1,21 @@
+{
+  "$schema": "../app-info-schema.json",
+  "name": "Whoami (u-server test)",
+  "id": "whoami",
+  "available": true,
+  "port": 8087,
+  "exposable": true,
+  "dynamic_config": true,
+  "tipi_version": 1,
+  "version": "v1.12.0",
+  "categories": ["utilities"],
+  "description": "A tiny Go HTTP server that echoes the request it received, including the Host header and the container's own hostname. Its only purpose here is to prove the platform is service-agnostic: DNS, Traefik routing and Docker networking all work for an application that knows nothing about Project NOMAD, Meridian or u-server.",
+  "short_desc": "Minimal echo server used to verify routing end to end.",
+  "author": "traefik",
+  "source": "https://github.com/traefik/whoami",
+  "supported_architectures": ["amd64", "arm64"],
+  "created_at": 1786752000000,
+  "updated_at": 1786752000000,
+  "min_tipi_version": "4.7.0",
+  "form_fields": []
+}
