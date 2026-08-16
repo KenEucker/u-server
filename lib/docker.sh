@@ -13,6 +13,10 @@ _US_DOCKER_SOURCED=1
 
 # shellcheck source=lib/common.sh
 source "${US_LIB_DIR}/common.sh"
+# us_docker_install/us_docker_verify record into the manifest, so this adapter
+# owns that dependency rather than hoping every caller happens to source it.
+# shellcheck source=lib/versions.sh
+source "${US_LIB_DIR}/versions.sh"
 
 US_DOCKER_KEYRING="/etc/apt/keyrings/docker.asc"
 US_DOCKER_SOURCES="/etc/apt/sources.list.d/docker.sources"

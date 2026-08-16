@@ -21,6 +21,8 @@ source "${US_LIB_DIR}/common.sh"
 source "${US_LIB_DIR}/config.sh"
 # shellcheck source=lib/docker.sh
 source "${US_LIB_DIR}/docker.sh"
+# shellcheck source=lib/versions.sh
+source "${US_LIB_DIR}/versions.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
 
