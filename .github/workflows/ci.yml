@@ -166,6 +166,37 @@ jobs:
           done < <(./install.sh --list-stages)
           exit "$fail"
 
+      - name: Entry points are executable
+        run: |
+          # Guards a failure mode that is invisible on Windows checkouts, where
+          # core.filemode=false means a lost +x bit is never shown as a change.
+          # Anything invoked as ./script must carry mode 100755 in the tree;
+          # lib/ is sourced, not executed, and must NOT be executable.
+          # git ls-files -s emits "<mode> <sha> <stage>\t<path>" — the path is
+          # separated by a TAB, so the tab must be in IFS or path comes back empty.
+          fail=0
+          while IFS=$' \t' read -r mode _ _ path; do
+            case "$path" in
+              lib/*)
+                if [ "$mode" = "100755" ]; then
+                  echo "FAIL $path is executable but lib/ files are sourced, not run"
+                  fail=1
+                else
+                  echo "ok   $path (non-executable, sourced)"
+                fi
+                ;;
+              *)
+                if [ "$mode" = "100755" ]; then
+                  echo "ok   $path (executable)"
+                else
+                  echo "FAIL $path is $mode; needs 100755 (git update-index --chmod=+x '$path')"
+                  fail=1
+                fi
+                ;;
+            esac
+          done < <(git ls-files -s -- '*.sh')
+          exit "$fail"
+
       - name: --help works without root or configuration
         run: ./install.sh --help >/dev/null
 

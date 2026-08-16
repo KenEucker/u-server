@@ -57,6 +57,8 @@ source "${US_LIB_DIR}/common.sh"
 US_NOMAD_NETWORK="project-nomad_default"
 US_NOMAD_ADMIN_CONTAINER="nomad_admin"
 US_NOMAD_STORAGE_DEST="/app/storage"
+# shellcheck disable=SC2034  # consumed by scripts/70-project-nomad.sh and
+# update.sh, which source this file. See note in lib/adguard.sh.
 US_NOMAD_APP_ID="project-nomad"
 
 us_nomad_network_name() { printf '%s' "$US_NOMAD_NETWORK"; }

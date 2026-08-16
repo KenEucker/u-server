@@ -21,6 +21,10 @@ _US_ADGUARD_SOURCED=1
 source "${US_LIB_DIR}/common.sh"
 
 # AdGuard's Runtipi app id and its default host port (config.json "port": 8104).
+#
+# shellcheck disable=SC2034  # consumed by scripts/40-adguard.sh, which sources
+# this file; shellcheck analyses each file in isolation and cannot see a
+# library constant being read by the scripts that source it.
 US_ADGUARD_APP_ID="adguard"
 US_ADGUARD_PORT="${US_ADGUARD_PORT:-8104}"
 
