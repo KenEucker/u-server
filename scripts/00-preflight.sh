@@ -241,8 +241,19 @@ fi
 # shellcheck source=lib/docker.sh
 source "${US_LIB_DIR}/docker.sh"
 
-if us_docker_desktop_present; then
-  us_die "Docker Desktop detected. u-server requires Docker Engine directly on the host."
+if desktop_signal="$(us_docker_desktop_signal)"; then
+  us_error "Docker Desktop detected: ${desktop_signal}."
+  us_error "u-server requires Docker Engine directly on the host: Desktop runs its"
+  us_error "engine in a VM behind its own socket, which Runtipi's stack cannot use."
+  us_error "Remove it, then rerun:"
+  us_error "  sudo apt-get remove docker-desktop     # or the Desktop uninstaller"
+  us_error "  docker context use default"
+  us_die "Docker Desktop detected."
+elif us_docker_desktop_stale_context; then
+  us_warn "A 'desktop-linux' docker context is defined, but Docker Desktop is not installed."
+  us_warn "Left over from an uninstall. Harmless now, but it breaks every stage if"
+  us_warn "anything switches to it. Remove it:  docker context rm desktop-linux"
+  warnings=$((warnings + 1))
 fi
 
 if us_docker_present; then

@@ -63,6 +63,31 @@ sudo fuser -v /var/lib/u-server/install.lock   # is anything holding it?
 If nothing holds it, the lock is released automatically when the process
 exits; a stale file alone is harmless.
 
+### "Docker Desktop detected"
+
+u-server needs Docker Engine running directly on the host. Docker Desktop keeps
+its engine in a VM behind its own socket, so Runtipi's containers cannot bind
+the host's ports 53/80/443 — which is the whole point of this platform.
+
+Preflight names what it found. Confirm it yourself:
+
+```bash
+ls -d /opt/docker-desktop /usr/bin/docker-desktop 2>/dev/null; docker context ls
+```
+
+If Docker Desktop really is installed, remove it and rerun:
+
+```bash
+sudo apt-get remove docker-desktop && docker context use default
+```
+
+If it is *not* installed and only a `desktop-linux` context is listed, that is a
+leftover from an uninstall. Preflight only warns about it, but clear it anyway:
+
+```bash
+docker context rm desktop-linux
+```
+
 ### The installer says my Ubuntu version is unverified
 
 22.04, 24.04 and 26.04 are verified. Others may work but Docker may not
