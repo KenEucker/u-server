@@ -241,11 +241,24 @@ remove unrelated containers, or upgrade a healthy component.
   [future-offline-design.md](future-offline-design.md).
 - **No Runtipi fork.** Upstream unmodified; every integration point used is a
   supported one.
-- **No HTTPS by default.** `ENABLE_LOCAL_HTTPS=false` keeps milestone 1 simple.
-  Runtipi already generates a certificate covering `*.home.arpa` and
-  `home.arpa`, so enabling it later is a settings change plus distributing the
-  local CA to clients. Public ACME is never used for `home.arpa` — it is not
-  delegable and the challenge cannot succeed.
+- **No _trusted_ HTTPS by default.** Note the qualifier: HTTPS itself is not
+  optional and never was. Runtipi gives every locally-exposed app a `tls: true`
+  router and redirects the plain-HTTP one to it, so `http://home.arpa` has
+  always been a 301 to `https://home.arpa`. What `ENABLE_LOCAL_HTTPS=false`
+  leaves you with is Runtipi's self-signed certificate: real encryption,
+  unverified identity, hence the browser warning.
+
+  Setting it true creates a local CA and substitutes a certificate signed by it
+  into the two files Runtipi's `dynamic.yml` already points Traefik at. That is
+  a substitution into a reserved slot, not a new mechanism — the one upstream
+  interaction that needs care is the marker file that stops Runtipi
+  regenerating over it. It stays opt-in because creating a CA puts a key on
+  this host that can vouch for any name to any device trusting it.
+
+  Public ACME is never used for `home.arpa` — it is not delegable and no
+  challenge can succeed. Certificates from a public CA require giving up
+  `home.arpa` for a domain you own. See [https.md](https.md), which sets out
+  that trade and the Certificate Transparency and offline consequences of it.
 - **No firewall changes by default.** `MANAGE_FIREWALL=false`. Reconfiguring a
   firewall on a remote machine is how people lose SSH access.
 - **No applications bundled.** The installer builds the platform and installs

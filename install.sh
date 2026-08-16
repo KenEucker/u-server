@@ -29,6 +29,7 @@ US_STAGES=(
   "30-runtipi-config"
   "40-adguard"
   "50-local-dns"
+  "60-tls"
   "90-verify"
 )
 
@@ -225,10 +226,20 @@ cat >&2 <<EOF
 
   Service URLs (from any LAN client using this server for DNS):
 
-      http://${LOCAL_DOMAIN}          Runtipi dashboard
+      https://${LOCAL_DOMAIN}         Runtipi dashboard
 EOF
 us_config_is_true "$INSTALL_ADGUARD" &&
-  printf '      http://%s             AdGuard Home\n' "$DNS_DOMAIN" >&2
+  printf '      https://%s            AdGuard Home\n' "$DNS_DOMAIN" >&2
+
+if ! us_config_is_true "$ENABLE_LOCAL_HTTPS"; then
+  cat >&2 <<EOF
+
+  Those are https because Traefik redirects http to it — that is Runtipi's own
+  routing, not a choice made here. The certificate is self-signed, so browsers
+  will warn. ENABLE_LOCAL_HTTPS=true replaces it with one you can trust; see
+  docs/https.md.
+EOF
+fi
 
 cat >&2 <<EOF
 

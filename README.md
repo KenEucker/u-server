@@ -18,9 +18,14 @@ sudo ./install.sh
 Afterwards, from any LAN client using this server for DNS:
 
 ```
-http://home.arpa            Runtipi dashboard
-http://dns.home.arpa        AdGuard Home
+https://home.arpa           Runtipi dashboard
+https://dns.home.arpa       AdGuard Home
 ```
+
+Those are `https` because Traefik redirects `http` to it — that is Runtipi's
+own routing, not a setting. Out of the box the certificate is self-signed, so
+browsers warn; `ENABLE_LOCAL_HTTPS=true` replaces it with one your devices can
+be told to trust. See [docs/https.md](docs/https.md).
 
 Every application you install from Runtipi's app store gets its own
 `<name>.home.arpa` on the same basis, with no further DNS work.
@@ -98,7 +103,7 @@ values you are most likely to change:
 | `LOCAL_DOMAIN` | `home.arpa` (RFC 8375). Do **not** use `.local` — that is mDNS. |
 | `RUNTIPI_VERSION` | `stable`, or an exact tag like `v4.10.1` |
 | `INSTALL_ADGUARD` | Whether to install AdGuard Home and the wildcard DNS it serves |
-| `ENABLE_LOCAL_HTTPS` | `false` for milestone 1; HTTP on the LAN |
+| `ENABLE_LOCAL_HTTPS` | Replace Runtipi's self-signed certificate with one from a local CA this installer creates. HTTPS itself is always on either way. |
 | `MANAGE_FIREWALL` | `false` by default — this installer will not risk locking you out of SSH |
 
 ## Version resolution
@@ -177,6 +182,14 @@ The platform aims to keep sharp edges visible rather than hidden.
   own Docker networks.
 - Application ports are **not** published to the LAN; Traefik is the entry
   point.
+- **Every service is served over TLS and HTTP redirects to it**, by Runtipi's
+  own routing. The default certificate is self-signed, so browsers warn — the
+  encryption is real, the identity is unverified. `ENABLE_LOCAL_HTTPS=true`
+  creates a local CA and issues a certificate for `*.home.arpa` from it; you
+  then install that CA on each device once. A CA your devices trust can vouch
+  for any name, so read [docs/https.md](docs/https.md) before enabling it.
+  Let's Encrypt cannot issue for `home.arpa` — it is not delegable, so no ACME
+  challenge can succeed.
 - Secrets are generated at install into `/etc/u-server/secrets.env` (`0600`)
   and never regenerated on rerun. CI fails if credential-like files are
   tracked.
@@ -202,6 +215,7 @@ Installing *new* things still requires the Internet in this phase. See
 | [docs/networking.md](docs/networking.md) | Host addressing, DHCP reservations vs. static IP, the WiFi caveat |
 | [docs/dns.md](docs/dns.md) | `home.arpa`, wildcards, the port-53 bootstrap, router setup |
 | [docs/runtipi.md](docs/runtipi.md) | How Runtipi is used, and the dashboard-hostname compromise |
+| [docs/https.md](docs/https.md) | Why HTTPS is already on, why Let's Encrypt cannot work here, and the local CA |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom-first fault guide |
 | [docs/future-offline-design.md](docs/future-offline-design.md) | Air-gap design and known Internet dependencies |
 

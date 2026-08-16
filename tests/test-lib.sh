@@ -243,6 +243,113 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+printf '\nTLS certificate naming\n'
+# shellcheck source=lib/tls.sh
+source "${US_LIB_DIR}/tls.sh" 2>/dev/null
+
+# The whole point of normalising is that these two forms must compare equal.
+# openssl PRINTS "IP Address:" when reading a certificate but only ACCEPTS
+# "IP:" when writing one, and it preserves whatever order the extension was
+# built in. Without normalisation the comparison never matches, the leaf is
+# reissued on every single run, and Traefik is restarted every run with it.
+check "desired SAN is canonical and sorted" \
+  "DNS:*.home.arpa,DNS:home.arpa,IP:192.168.8.10" \
+  "$(us_tls_desired_san home.arpa 192.168.8.10)"
+
+check "openssl's read form normalises to the write form" \
+  "DNS:*.home.arpa,DNS:home.arpa,IP:192.168.8.10" \
+  "$(printf 'DNS:home.arpa, DNS:*.home.arpa, IP Address:192.168.8.10' | us_tls_san_normalise)"
+
+check "ordering differences do not count as a change" \
+  "$(us_tls_desired_san home.arpa 192.168.8.10)" \
+  "$(printf '  IP Address:192.168.8.10,DNS:*.home.arpa,  DNS:home.arpa' | us_tls_san_normalise)"
+
+# The apex must be listed explicitly: *.home.arpa does not match home.arpa in
+# either DNS (RFC 4592) or TLS, and home.arpa is where the dashboard lives.
+# This also pins that no IP is emitted when LAN_IP is unset.
+check "apex is covered as well as the wildcard, with no IP" \
+  "DNS:*.home.arpa,DNS:home.arpa" \
+  "$(us_tls_desired_san home.arpa "")"
+
+# ---------------------------------------------------------------------------
+printf '\nTLS certificate issuance (real openssl)\n'
+if us_have openssl && us_have date; then
+  tlsdir="$(mktemp -d)"
+  # Point the library at a scratch CA rather than /etc/u-server. These two are
+  # read only from inside the lib/tls.sh functions under test, which shellcheck
+  # cannot associate with the assignments here.
+  # shellcheck disable=SC2034
+  US_TLS_CA_DIR="$tlsdir"
+  US_TLS_CA_KEY="${tlsdir}/ca.key"
+  US_TLS_CA_CRT="${tlsdir}/ca.crt"
+  # shellcheck disable=SC2034
+  US_TLS_CA_SRL="${tlsdir}/ca.srl"
+  US_TLS_LEAF_KEY="${tlsdir}/server.key"
+  US_TLS_LEAF_CRT="${tlsdir}/server.crt"
+  LOCAL_DOMAIN="home.arpa"
+  US_DRY_RUN=0
+
+  us_tls_ca_ensure >/dev/null 2>&1
+  check_true "CA is created"              test -f "$US_TLS_CA_CRT"
+
+  # A world-readable CA private key is the one file on this host that must not
+  # be one, so it is worth asserting — but only where the filesystem can
+  # express it. A Windows checkout reports 644 no matter what chmod was asked
+  # for, and a test that always fails there is a test people learn to ignore.
+  probe="${tlsdir}/.mode-probe"
+  touch "$probe" && chmod 0600 "$probe"
+  modes_observable=0
+  if [[ "$(stat -c '%a' "$probe" 2>/dev/null)" == "600" ]]; then
+    modes_observable=1
+    check "CA key is private" "600" "$(stat -c '%a' "$US_TLS_CA_KEY")"
+  else
+    printf '  skip filesystem does not honour chmod; key permissions not exercised\n'
+  fi
+
+  # A CA that is not marked as one is silently rejected by some clients.
+  check_true "CA is marked CA:TRUE" bash -c \
+    "openssl x509 -noout -text -in '$US_TLS_CA_CRT' | grep -q 'CA:TRUE'"
+
+  # Creating it twice must not replace it: every device that trusted the first
+  # one would silently stop trusting the server.
+  before="$(us_tls_fingerprint "$US_TLS_CA_CRT")"
+  us_tls_ca_ensure >/dev/null 2>&1 || true
+  check "rerunning never regenerates the CA" "$before" "$(us_tls_fingerprint "$US_TLS_CA_CRT")"
+
+  us_tls_leaf_issue home.arpa 192.168.8.10 >/dev/null 2>&1
+  check_true "leaf is issued"             test -f "$US_TLS_LEAF_CRT"
+  ((modes_observable)) &&
+    check "leaf key is private" "600" "$(stat -c '%a' "$US_TLS_LEAF_KEY")"
+  check_true "leaf verifies against the CA" us_tls_signed_by "$US_TLS_LEAF_CRT" "$US_TLS_CA_CRT"
+  check "leaf carries exactly the wanted names" \
+    "$(us_tls_desired_san home.arpa 192.168.8.10)" \
+    "$(us_tls_cert_san "$US_TLS_LEAF_CRT")"
+
+  # A converged host must report no reason to reissue. If this regresses, every
+  # install rerun silently bounces Traefik.
+  check "a current leaf gives no reason to reissue" "" \
+    "$(us_tls_leaf_reason home.arpa 192.168.8.10)"
+
+  # ...but a changed LAN_IP or domain must be caught, or the server keeps
+  # serving a certificate for a name it no longer answers to.
+  # Defined as a function, not a `bash -c` string: check_true runs its argument
+  # in THIS shell, and a subshell would not have the library sourced.
+  needs_reissue() { [[ -n "$(us_tls_leaf_reason "$1" "${2:-}")" ]]; }
+  check_true "a changed LAN_IP forces reissue" needs_reissue home.arpa 192.168.8.99
+  check_true "a changed domain forces reissue" needs_reissue lab.arpa 192.168.8.10
+
+  days="$(us_tls_days_remaining "$US_TLS_LEAF_CRT")"
+  # Must stay under the 398-day cap Safari applies, and obviously be in the
+  # future. 397 leaves no rounding room to get this wrong.
+  in_range() { (($1 > 0 && $1 < 398)); }
+  check_true "expiry is in the future and under the 398-day cap" in_range "$days"
+
+  rm -rf "$tlsdir"
+else
+  printf '  skip openssl not installed; certificate issuance not exercised\n'
+fi
+
+# ---------------------------------------------------------------------------
 printf '\nset -e safety\n'
 # `((n++))` evaluates to the value BEFORE incrementing, and an arithmetic
 # command whose result is 0 exits 1. Every counter in this repo starts at 0, so

@@ -23,6 +23,8 @@ source "${US_LIB_DIR}/versions.sh"
 source "${US_LIB_DIR}/docker.sh"
 # shellcheck source=lib/runtipi.sh
 source "${US_LIB_DIR}/runtipi.sh"
+# shellcheck source=lib/tls.sh
+source "${US_LIB_DIR}/tls.sh"
 
 purge_data=0
 assume_yes=0
@@ -71,6 +73,20 @@ cat >&2 <<EOF
     - change your router's DHCP/DNS settings
 EOF
 
+if [[ -f "$US_TLS_CA_CRT" ]]; then
+  cat >&2 <<EOF
+
+  THE LOCAL CA WILL BE DESTROYED.
+      ${US_TLS_CA_KEY}
+  Every device you installed it on keeps trusting a CA that no longer exists.
+  Reinstalling creates a NEW one, so each device has to be visited again.
+  Keep a copy first if you intend to come back:
+      sudo cp -a ${US_TLS_CA_DIR} ~/u-server-ca-backup
+  Remove the old certificate from your devices' trust stores either way — see
+  docs/https.md.
+EOF
+fi
+
 if ((purge_data)); then
   cat >&2 <<EOF
 
@@ -100,6 +116,12 @@ if [[ -x "$(us_runtipi_cli)" ]]; then
   us_info "Stopping Runtipi"
   us_runtipi_stop || true
 fi
+
+# --- Retire the local CA ---------------------------------------------------
+# Before US_CONF_DIR is removed, because both of these are derived from files
+# that live in it.
+us_tls_remove_renew_timer
+us_tls_untrust_on_host
 
 # --- Restore host DNS ------------------------------------------------------
 dropin="/etc/systemd/resolved.conf.d/60-${US_PROJECT_NAME}.conf"

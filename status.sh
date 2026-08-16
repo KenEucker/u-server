@@ -20,6 +20,8 @@ source "${US_LIB_DIR}/docker.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
+# shellcheck source=lib/tls.sh
+source "${US_LIB_DIR}/tls.sh"
 
 us_init "status"
 us_config_load
@@ -54,7 +56,7 @@ else
   fail "Runtipi is not healthy"
 fi
 
-if us_docker_container_healthy runtipi-reverse-proxy; then
+if us_docker_container_healthy "$US_RUNTIPI_PROXY_CONTAINER"; then
   us_status_ok "Traefik"
 else
   fail "Traefik is not healthy"
@@ -143,6 +145,33 @@ route_check() {
 
 route_check "$LOCAL_DOMAIN"
 us_config_is_true "$INSTALL_ADGUARD" && route_check "$DNS_DOMAIN"
+
+# --- TLS -------------------------------------------------------------------
+# Reported unconditionally: every route above redirects to HTTPS, so the state
+# of the certificate is the state of the platform as users experience it.
+printf '\nTLS\n'
+if ! us_config_is_true "$ENABLE_LOCAL_HTTPS"; then
+  us_status_skip "self-signed (ENABLE_LOCAL_HTTPS=false) — browsers will warn"
+elif leaf_days="$(us_tls_days_remaining "$US_TLS_LEAF_CRT" 2>/dev/null)"; then
+  if ((leaf_days < 1)); then
+    # Integer division truncates toward zero, so "0" covers both "expires
+    # today" and "expired hours ago". Either way this is the cliff: Runtipi's
+    # own -checkend 86400 test fails here and it overwrites the certificate.
+    fail "certificate has under a day left; Runtipi will replace it with a self-signed one"
+  elif ((leaf_days < US_TLS_RENEW_BEFORE_DAYS)); then
+    us_status_warn "certificate expires in ${leaf_days} day(s); renewal overdue"
+  else
+    us_status_ok "local CA certificate, ${leaf_days} day(s) remaining"
+  fi
+
+  if us_tls_https_trusted "$LAN_IP" "$LOCAL_DOMAIN"; then
+    us_status_ok "https://${LOCAL_DOMAIN} trusted"
+  else
+    fail "https://${LOCAL_DOMAIN} does not verify"
+  fi
+else
+  fail "ENABLE_LOCAL_HTTPS is true but no certificate exists; run: sudo scripts/60-tls.sh"
+fi
 
 # --- Summary ---------------------------------------------------------------
 printf '\n'
