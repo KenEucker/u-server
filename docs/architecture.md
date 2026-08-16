@@ -1,11 +1,11 @@
 # Architecture
 
 This document records what was verified upstream, what was decided as a
-result, and why. Every claim about Runtipi, Project NOMAD, AdGuard or Docker
-below was read from source or from official documentation, not from memory.
-File references point at the code that establishes each fact.
+result, and why. Every claim about Runtipi, AdGuard or Docker below was read
+from source or from official documentation, not from memory. File references
+point at the code that establishes each fact.
 
-Verified 2026-08 against Runtipi `v4.10.1` and Project NOMAD `v1.34.0`.
+Verified 2026-08 against Runtipi `v4.10.1`.
 
 ---
 
@@ -14,23 +14,22 @@ Verified 2026-08 against Runtipi `v4.10.1` and Project NOMAD `v1.34.0`.
 ```
 Host infrastructure          Applications
 -------------------          ------------
-Docker Engine                Project NOMAD
-Runtipi                      Meridian
-Traefik                      whoami
-AdGuard Home (as an app)     ...anything else
+Docker Engine                ...anything you install
+Runtipi                         from Runtipi's app store
+Traefik
+AdGuard Home (as an app)
 DNS + routing policy
 ```
 
 The host layer knows how to *run and reach* containers. It knows nothing about
-what any particular container does. The test for whether this holds is the
-`whoami` app: it is three lines of YAML, references nothing project-specific,
-and gets a working hostname, DNS entry and TLS-ready route purely by existing.
+what any particular container does.
 
-Consequently there is **no NOMAD-specific or Meridian-specific logic in any
-installer stage**. `scripts/70-project-nomad.sh` exists only to surface
-NOMAD's elevated permissions before granting them and to verify two upstream
-contracts; the installation itself is the same generic API call the `whoami`
-app uses.
+Consequently there is **no application-specific logic in any installer stage**.
+The installer ships no applications and registers no app store of its own; the
+one app it installs, AdGuard, comes from the store Runtipi ships with and is
+installed through the same generic API call any other app would use. Anything
+else is installed from the dashboard afterwards and gets a working hostname,
+DNS entry and TLS-ready route purely by existing.
 
 ---
 
@@ -82,7 +81,7 @@ dashboard's hostname and the suffix every app hangs off. With
 
 ```
 http://home.arpa         dashboard
-http://nomad.home.arpa   Project NOMAD
+http://dns.home.arpa     AdGuard Home
 ```
 
 **Decision: use the apex as the dashboard address.** It is what upstream
@@ -105,7 +104,7 @@ An earlier revision also published the dashboard at `server.home.arpa`, since
 the original brief specified that name. Because `LOCAL_DOMAIN` is one knob,
 that name could only be *added*, never substituted — setting
 `LOCAL_DOMAIN=server.home.arpa` would have moved every app to
-`nomad.server.home.arpa`. So it was implemented as an extra Traefik router
+`<app>.server.home.arpa`. So it was implemented as an extra Traefik router
 through the file provider Runtipi already watches, forwarding to
 `dashboard@docker`.
 
@@ -139,9 +138,9 @@ and `healthcheck` pass through to the generated compose file, and a top-level
 `networks:` block is preserved (`compose.builder.ts` merges its own entries
 into whatever is already there).
 
-**Why this matters:** it means Project NOMAD's two hard requirements — a
-specific container name and a specific network name — can be met inside a
-normal app definition. No user-config override, no patched Runtipi.
+**Why this matters:** an app with hard requirements — a specific container
+name, a specific network name — can be packaged as a normal app definition.
+No user-config override, no patched Runtipi.
 
 (There is a *second*, camelCase schema, `dynamic-compose-ark.ts`, with
 `schemaVersion: 2` and a `services` array. That one is for apps created
@@ -162,7 +161,7 @@ reproduces exactly that (`us_runtipi_jwt`) and posts to
 
 **Decision:** use the same authenticated local API the CLI uses, rather than
 driving a browser or shipping a patched CLI. This is what makes a single
-`sudo ./install.sh` able to land NOMAD on `nomad.home.arpa` unattended.
+`sudo ./install.sh` able to land AdGuard on `dns.home.arpa` unattended.
 
 ### 2.5 App stores must be HTTPS git with `apps/` at the root
 
@@ -172,104 +171,14 @@ with `isomorphic-git` over an HTTP client — so `file://` and local paths do
 not work. A branch can be selected with a `/tree/<branch>` suffix
 (`getRepoBaseUrlAndBranch`).
 
-**Decision:** keep definitions in `appstore/apps/` next to the installer that
-deploys them, and publish them to a dedicated `appstore` branch where `apps/`
-is the root (`tools/publish-appstore.sh`). One repository, both shapes.
+**Decision:** register no app store of our own. The installer uses the official
+store Runtipi ships with, which is the one AdGuard comes from. A store of your
+own is a separate repository with `apps/` at its root, added from the
+dashboard — not something this installer publishes or manages.
 
 ---
 
-## 3. Project NOMAD: three contracts
-
-Recorded in full, with source references, at the top of `lib/nomad.sh`.
-
-### Contract 1 — the child network name is hardcoded
-
-```ts
-public static NOMAD_NETWORK = 'project-nomad_default'   // docker_service.ts:34
-```
-
-applied when NOMAD creates containers:
-
-```ts
-NetworkingConfig: { EndpointsConfig: { [DockerService.NOMAD_NETWORK]: {} } }
-```
-
-That name only arises naturally when the compose project is literally called
-`project-nomad`. Under Runtipi the project is `<app>_<store>`, so the package
-declares the name explicitly:
-
-```yaml
-networks:
-  nomad-internal:
-    name: project-nomad_default
-```
-
-Without this, every child service NOMAD tried to create would fail to attach.
-
-A drift check (`us_nomad_check_network_contract`) re-reads the upstream
-constant and warns if it moves. It is advisory: a network hiccup must not
-block an install.
-
-### Contract 2 — storage is resolved by self-inspection
-
-`_resolveHostStorageRoot()` inspects the container named `nomad_admin`, finds
-the bind whose destination is `/app/storage`, and uses that bind's **host-side
-source** as the root for child containers' bind mounts.
-
-This is the mechanism that avoids the classic failure the brief warns about —
-a path that is valid inside the container and meaningless to the host Docker
-daemon. Two requirements follow, and both are asserted in `tests/test-lib.sh`:
-
-- `container_name: nomad_admin` must be pinned.
-- `/app/storage` must be a **bind**, not a named volume, so `Source` is a real
-  host path.
-
-Runtipi sets `APP_DATA_DIR` to a host path
-(`<appDataPath>/app-data/<store>/<app>`, `app.helpers.ts:55`), so binding
-`${APP_DATA_DIR}/data/storage:/app/storage` satisfies this. Relocating
-Runtipi's app-data directory relocates child services automatically.
-
-`NOMAD_STORAGE_PATH` is set to the same host path, but it is only the fallback
-used when inspection fails.
-
-### Contract 3 — the self-updater is omitted
-
-`install/sidecar-updater/update-watcher.sh` runs:
-
-```bash
-docker compose -p "$COMPOSE_PROJECT_NAME" -f /opt/project-nomad/compose.yml \
-    pull / stop / rm / up -d
-```
-
-Under Runtipi that compose file does not exist, and even if it did, two
-systems would own the same containers.
-
-**Ownership boundary:**
-
-| Owner | Responsible for |
-|---|---|
-| Runtipi | NOMAD's core stack: admin, MySQL, Redis, disk-collector — lifecycle, version, backups |
-| NOMAD | Everything NOMAD installs: child content containers and their data |
-
-The `dozzle` log viewer is also omitted: it wants a second Docker socket mount
-for functionality Runtipi already provides.
-
-A regression test asserts the updater stays out of the package.
-
-### A version-line trap worth recording
-
-Project NOMAD release `v1.34.0` **does** have a matching container image — but
-`ghcr.io`'s `tags/list` returns 100 tags by default and the repository has
-102, so a naive query hides recent releases. Meanwhile
-`project-nomad-disk-collector` is on an entirely independent version line
-(newest `v1.31.1`) and must not be pinned to the NOMAD release version.
-
-`tools/resolve-versions.sh` therefore pages with `?n=1000` and resolves each
-image independently, verifying a tag exists in the registry before writing it.
-
----
-
-## 4. DNS model
+## 3. DNS model
 
 ```
 AdGuard:  hostname → server IP        one wildcard, set once
@@ -292,13 +201,12 @@ circular dependency — see [dns.md](dns.md).
 
 ---
 
-## 5. Networking and isolation
+## 4. Networking and isolation
 
 | Network | Purpose |
 |---|---|
 | `runtipi_tipi_main_network` | Traefik ↔ each app's main service |
 | `<app>_<store>_network` | private, per-app, for multi-service apps |
-| `project-nomad_default` | NOMAD admin ↔ its child services |
 
 Only a service marked `is_main` joins the Traefik network, so an app's
 database is reachable by its own app and nothing else. Unrelated applications
@@ -307,7 +215,7 @@ Traefik is the entry point.
 
 ---
 
-## 6. Idempotency
+## 5. Idempotency
 
 Rerunning `install.sh` converges. The mechanisms:
 
@@ -327,7 +235,7 @@ remove unrelated containers, or upgrade a healthy component.
 
 ---
 
-## 7. Deliberate non-goals for this phase
+## 6. Deliberate non-goals for this phase
 
 - **No offline bundle.** Designed for, not built. See
   [future-offline-design.md](future-offline-design.md).
@@ -340,4 +248,6 @@ remove unrelated containers, or upgrade a healthy component.
   delegable and the challenge cannot succeed.
 - **No firewall changes by default.** `MANAGE_FIREWALL=false`. Reconfiguring a
   firewall on a remote machine is how people lose SSH access.
-- **No Meridian guess.** See the scaffold's description for what is needed.
+- **No applications bundled.** The installer builds the platform and installs
+  AdGuard, because DNS is part of the platform. Everything else is yours to
+  install from the dashboard.

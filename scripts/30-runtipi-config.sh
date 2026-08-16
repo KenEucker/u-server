@@ -10,7 +10,6 @@
 #
 # So LOCAL_DOMAIN=home.arpa gives:
 #     http://home.arpa        -> Runtipi dashboard
-#     http://nomad.home.arpa  -> Project NOMAD
 #     http://dns.home.arpa    -> AdGuard
 #
 # The apex is genuinely claimed, on both layers: scripts/50-local-dns.sh

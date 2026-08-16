@@ -29,8 +29,6 @@ US_STAGES=(
   "30-runtipi-config"
   "40-adguard"
   "50-local-dns"
-  "60-appstore"
-  "70-project-nomad"
   "90-verify"
 )
 
@@ -57,7 +55,7 @@ Examples:
   sudo ./install.sh --dry-run
   sudo ./install.sh --from 40-adguard
   sudo ./install.sh --stage 90-verify
-  sudo ./install.sh --skip 70-project-nomad
+  sudo ./install.sh --skip 40-adguard
 
 Configuration lives in ./server.env (copy config/server.env.example).
 Logs are written to ${US_LOG_DIR}/.
@@ -231,10 +229,6 @@ cat >&2 <<EOF
 EOF
 us_config_is_true "$INSTALL_ADGUARD" &&
   printf '      http://%s             AdGuard Home\n' "$DNS_DOMAIN" >&2
-us_config_is_true "$INSTALL_PROJECT_NOMAD" &&
-  printf '      http://%s           Project NOMAD\n' "$NOMAD_DOMAIN" >&2
-us_config_is_true "$INSTALL_WHOAMI" &&
-  printf '      http://%s          Routing test\n' "$WHOAMI_DOMAIN" >&2
 
 cat >&2 <<EOF
 

@@ -145,8 +145,7 @@ if stores_json="$(us_runtipi_api GET "marketplace/all")"; then
   us_debug "App stores: $(printf '%s' "$stores_json" |
     jq -c '[.appStores[]? | {slug, url}]' 2>/dev/null || printf '%s' "$stores_json")"
   # Match on the upstream repository URL; fall back to whatever store Runtipi
-  # shipped with, which at this stage is the only one registered (u-server's
-  # own store is added later, by 60-appstore).
+  # shipped with, which is the only one this installer ever registers.
   store_slug="$(printf '%s' "$stores_json" | jq -r '
     [.appStores[]? | select((.url // "") | test("runtipi-appstore")) | .slug] +
     [.appStores[]? | .slug]

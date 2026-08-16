@@ -90,7 +90,7 @@ if us_write_if_changed "$US_RESOLVED_DROPIN" 0644 <<EOF
 #
 # DNSStubListener=no frees port 53 for AdGuard Home.
 # DNS=127.0.0.1 makes this host resolve ${LOCAL_DOMAIN} through its own
-# AdGuard instance, so 'ping ${NOMAD_DOMAIN}' works on the server too.
+# AdGuard instance, so 'ping ${DNS_DOMAIN}' works on the server too.
 # FallbackDNS keeps the host resolving if AdGuard is stopped.
 [Resolve]
 DNSStubListener=no

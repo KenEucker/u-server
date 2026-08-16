@@ -354,45 +354,11 @@ us_runtipi_wait_api() {
 # App stores
 # ---------------------------------------------------------------------------
 
+# u-server registers no app store of its own: AdGuard comes from the official
+# store Runtipi ships with. This reader stays because doctor.sh reports which
+# stores a node actually has.
 us_runtipi_appstore_list() {
   us_runtipi_api GET "marketplace/all"
-}
-
-us_runtipi_appstore_exists() {
-  local slug="$1" json
-  json="$(us_runtipi_appstore_list 2>/dev/null)" || return 1
-  printf '%s' "$json" | jq -e --arg s "$slug" '.appStores[]? | select(.slug == $s)' >/dev/null 2>&1
-}
-
-# us_runtipi_appstore_add <name> <url>
-# Runtipi clones app stores with isomorphic-git over HTTP(S) and expects
-# apps/ at the repository ROOT. A branch may be selected with the
-# /tree/<branch> suffix (repos.helpers.ts getRepoBaseUrlAndBranch).
-us_runtipi_appstore_add() {
-  local name="$1" url="$2"
-
-  if us_runtipi_appstore_exists "$name"; then
-    us_ok "App store '${name}' already registered"
-    return 0
-  fi
-
-  if [[ "$US_DRY_RUN" == "1" ]]; then
-    us_info "DRY-RUN: would register app store ${name} -> ${url}"
-    return 0
-  fi
-
-  us_info "Registering app store '${name}' -> ${url}"
-  us_runtipi_api POST "marketplace/create" \
-    "$(jq -nc --arg n "$name" --arg u "$url" '{name:$n, url:$u}')" >/dev/null ||
-    us_die "Could not register app store '${name}'. Check that ${url} is reachable and has apps/ at its root."
-
-  us_ok "Registered app store '${name}'"
-}
-
-us_runtipi_appstore_pull() {
-  us_info "Refreshing app stores"
-  us_runtipi_api POST "marketplace/pull" '{}' >/dev/null ||
-    us_warn "App store refresh reported an error"
 }
 
 # ---------------------------------------------------------------------------

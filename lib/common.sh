@@ -22,7 +22,7 @@ source "${US_LIB_DIR}/logging.sh"
 # Project identity and well-known paths
 # ---------------------------------------------------------------------------
 # Neutral project slug, derived from the repository name. Deliberately not
-# "nomad-*" or "meridian-*": those are workloads, not the platform.
+# named after any application: this is the platform, not a workload on it.
 US_PROJECT_NAME="u-server"
 US_CONF_DIR="/etc/${US_PROJECT_NAME}"
 US_STATE_DIR="/var/lib/${US_PROJECT_NAME}"

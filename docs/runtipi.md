@@ -12,7 +12,6 @@ Verified against `runtipi/runtipi` v4.10.1 (2026-08).
 |---|---|
 | Installing the CLI at an exact resolved version | `scripts/20-runtipi.sh` |
 | Local domain configuration | `scripts/30-runtipi-config.sh` |
-| Registering the custom app store | `scripts/60-appstore.sh` |
 | All upstream-specific knowledge | `lib/runtipi.sh` (only this file) |
 
 If upstream renames an asset, moves its data directory, or changes an API
@@ -76,14 +75,14 @@ With `LOCAL_DOMAIN=home.arpa` you natively get:
 
 ```
 http://home.arpa         dashboard
-http://nomad.home.arpa   Project NOMAD
+http://dns.home.arpa     AdGuard Home
 ```
 
 The dashboard is therefore at the **apex**, and there is no setting to change
 that independently: `LOCAL_DOMAIN` is one value feeding both rules, so any
 `server.`-style name can be *added* alongside the apex but never substituted
 for it. Setting `LOCAL_DOMAIN=server.home.arpa` would move every app to
-`nomad.server.home.arpa`.
+`<app>.server.home.arpa`.
 
 ### The apex is properly claimed
 
@@ -159,11 +158,10 @@ reproduces that, so u-server uses the same supported local API:
 
 ```
 POST /api/app-lifecycle/<urn>/install
-{ "exposedLocal": true, "localSubdomain": "nomad", "openPort": false }
+{ "exposedLocal": true, "localSubdomain": "dns", "openPort": false }
 ```
 
-App identity is a URN: `<appName>:<appStoreSlug>`, e.g.
-`project-nomad:u-server`.
+App identity is a URN: `<appName>:<appStoreSlug>`, e.g. `adguard:migrated`.
 
 `openPort: false` is deliberate for apps that should be reachable only through
 Traefik — nothing is published to the LAN.
@@ -179,20 +177,16 @@ so:
 - a branch is selected with a `/tree/<branch>` suffix
   (`repos.helpers.ts:37-47`)
 
-u-server keeps definitions in `appstore/apps/` beside the installer and
-publishes them to an `appstore` branch where `apps/` is the root:
-
-```bash
-./tools/publish-appstore.sh
-# registers as: https://github.com/<owner>/<repo>/tree/appstore
-```
+u-server registers **no** app store of its own. AdGuard comes from the official
+store Runtipi ships with. To use your own definitions, add a store from the
+dashboard pointing at a repository that satisfies the three rules above.
 
 ## App package format
 
-Two files per app, plus metadata:
+If you do build your own store, two files per app, plus metadata:
 
 ```
-appstore/apps/<id>/
+apps/<id>/
 ├── config.json              metadata, ports, form fields
 ├── docker-compose.yml       services + x-runtipi extensions
 └── metadata/description.md  shown in the dashboard
@@ -222,12 +216,7 @@ pass through, and a top-level `networks:` block is preserved.
 > (`schemaVersion: 2`, `services` as an array). That one is for apps built
 > through the UI's custom-app builder, not for app-store packages.
 
-Validate before publishing:
-
-```bash
-./tools/validate-appstore.sh
-```
-
-This catches unpinned images, missing or duplicate `is_main`, missing
-`internal_port`, id/directory mismatches, host-port collisions, and
-undocumented socket or privileged usage. It also runs in CI.
+Worth checking before you publish such a store: unpinned images, missing or
+duplicate `is_main`, missing `internal_port`, id/directory mismatches, and
+host-port collisions. Runtipi rejects a malformed app at install time, deep
+inside a container, with a message that is hard to trace back.

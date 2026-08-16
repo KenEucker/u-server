@@ -23,8 +23,6 @@ source "${US_LIB_DIR}/docker.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
-# shellcheck source=lib/nomad.sh
-source "${US_LIB_DIR}/nomad.sh"
 
 us_init "doctor"
 us_config_load
@@ -63,12 +61,10 @@ if want versions; then
 
   printf '\n  Policies from configuration:\n'
   printf '    RUNTIPI_VERSION=%s\n' "$RUNTIPI_VERSION"
-  printf '    NOMAD_VERSION=%s\n' "$NOMAD_VERSION"
 
   if us_have_internet; then
     printf '\n  Upstream stable releases:\n'
     printf '    runtipi:       %s\n' "$(us_gh_latest_stable "$US_RUNTIPI_REPO" 2>/dev/null || echo 'unavailable')"
-    printf '    project-nomad: %s\n' "$(us_gh_latest_stable "$US_NOMAD_REPO" 2>/dev/null || echo 'unavailable')"
     printf '  (./update.sh --check compares these against what is installed)\n'
   else
     printf '\n  No Internet access; skipping upstream release lookup.\n'
@@ -110,7 +106,7 @@ if want dns; then
       jq -r '.[]? | "    \(.domain) -> \(.answer)"' || printf '    (none)\n'
 
     printf '\n  Resolution tests (querying %s directly):\n' "$LAN_IP"
-    for n in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "$NOMAD_DOMAIN" "doctor-$(date +%s).${LOCAL_DOMAIN}"; do
+    for n in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "doctor-$(date +%s).${LOCAL_DOMAIN}"; do
       got="$(dig +short +timeout=3 "@${LAN_IP}" "$n" A 2>/dev/null | tail -n1)"
       printf '    %-40s %s\n' "$n" "${got:-<no answer>}"
     done
@@ -130,16 +126,6 @@ fi
 if want docker; then
   section "Docker networks"
   docker network ls --format '  {{.Name}}\t{{.Driver}}\t{{.Scope}}' 2>/dev/null || printf '  (unavailable)\n'
-
-  printf '\n  Isolation check:\n'
-  if us_docker_network_exists "$(us_nomad_network_name)"; then
-    printf '    %s exists (NOMAD child services)\n' "$(us_nomad_network_name)"
-    members="$(docker network inspect "$(us_nomad_network_name)" \
-      -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null)"
-    printf '      members: %s\n' "${members:-<none>}"
-  else
-    printf '    %s missing — NOMAD cannot attach child services\n' "$(us_nomad_network_name)"
-  fi
 
   section "Containers"
   docker ps -a --format '  {{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null |
@@ -192,17 +178,6 @@ if want runtipi; then
   else
     printf '\n  Runtipi API not reachable — cannot list apps.\n'
   fi
-fi
-
-# ---------------------------------------------------------------------------
-if want nomad && us_config_is_true "$INSTALL_PROJECT_NOMAD"; then
-  section "Project NOMAD"
-  us_nomad_verify || true
-  printf '\n  Upstream contract:\n'
-  us_nomad_check_network_contract || true
-  printf '\n  Child services:\n'
-  children="$(us_nomad_child_services)"
-  printf '%s\n' "${children:-    (none yet)}" | sed 's/^/    /'
 fi
 
 # ---------------------------------------------------------------------------

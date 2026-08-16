@@ -21,8 +21,6 @@ source "${US_LIB_DIR}/versions.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
-# shellcheck source=lib/nomad.sh
-source "${US_LIB_DIR}/nomad.sh"
 
 us_init "verify"
 us_config_load
@@ -103,14 +101,6 @@ check_route() {
 
 check_route "$LOCAL_DOMAIN" "(Runtipi dashboard)"
 us_config_is_true "$INSTALL_ADGUARD" && check_route "$DNS_DOMAIN" "(AdGuard)"
-us_config_is_true "$INSTALL_WHOAMI" && check_route "$WHOAMI_DOMAIN" "(routing test)"
-us_config_is_true "$INSTALL_PROJECT_NOMAD" && check_route "$NOMAD_DOMAIN" "(Project NOMAD)"
-
-# --- Project NOMAD ---------------------------------------------------------
-if us_config_is_true "$INSTALL_PROJECT_NOMAD"; then
-  printf '\nPROJECT NOMAD\n' >&2
-  us_nomad_verify || failures=$((failures + 1))
-fi
 
 # --- Summary ---------------------------------------------------------------
 printf '\n' >&2

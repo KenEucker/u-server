@@ -82,7 +82,7 @@ if ((mem_mb >= 3800)); then
   us_ok "Memory ${mem_mb} MiB"
 else
   us_warn "Memory ${mem_mb} MiB is below the 4 GB Runtipi recommends."
-  us_warn "Project NOMAD (MySQL + Redis + admin) will be tight on this machine."
+  us_warn "Multi-container applications will be tight on this machine."
   warnings=$((warnings + 1))
 fi
 
@@ -97,7 +97,7 @@ if ((avail_mb >= 10240)); then
   us_ok "Free space on $(df -P "$check_root" | awk 'NR==2{print $6}'): $((avail_mb / 1024)) GiB"
 else
   us_warn "Only $((avail_mb / 1024)) GiB free at ${check_root}; 10 GiB is the practical minimum."
-  us_warn "Project NOMAD content (maps, ZIM archives, AI models) needs substantially more."
+  us_warn "Applications that store bulk content will need substantially more."
   warnings=$((warnings + 1))
 fi
 

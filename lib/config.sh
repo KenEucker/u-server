@@ -74,21 +74,11 @@ us_config_load() {
   # what its own Traefik router binds — so there is no separate dashboard
   # hostname to configure.
   DNS_DOMAIN="${DNS_DOMAIN:-dns.${LOCAL_DOMAIN}}"
-  NOMAD_DOMAIN="${NOMAD_DOMAIN:-nomad.${LOCAL_DOMAIN}}"
-  MERIDIAN_DOMAIN="${MERIDIAN_DOMAIN:-meridian.${LOCAL_DOMAIN}}"
-  WHOAMI_DOMAIN="${WHOAMI_DOMAIN:-whoami.${LOCAL_DOMAIN}}"
 
   RUNTIPI_VERSION="${RUNTIPI_VERSION:-stable}"
-  NOMAD_VERSION="${NOMAD_VERSION:-stable}"
   RUNTIPI_ROOT="${RUNTIPI_ROOT:-/opt/runtipi}"
 
   INSTALL_ADGUARD="${INSTALL_ADGUARD:-true}"
-  INSTALL_PROJECT_NOMAD="${INSTALL_PROJECT_NOMAD:-true}"
-  INSTALL_WHOAMI="${INSTALL_WHOAMI:-true}"
-  INSTALL_MERIDIAN="${INSTALL_MERIDIAN:-false}"
-
-  APPSTORE_SLUG="${APPSTORE_SLUG:-u-server}"
-  APPSTORE_URL="${APPSTORE_URL:-}"
 
   ADGUARD_UPSTREAM_DNS="${ADGUARD_UPSTREAM_DNS:-https://dns.quad9.net/dns-query 9.9.9.9 149.112.112.112}"
   DISABLE_RESOLVED_STUB="${DISABLE_RESOLVED_STUB:-true}"
@@ -111,16 +101,12 @@ us_config_load() {
   # Runtipi routes apps at <localSubdomain>.<LOCAL_DOMAIN>, so we need the
   # single label, not the FQDN.
   DNS_SUBDOMAIN="$(us_config_subdomain_of "$DNS_DOMAIN")"
-  NOMAD_SUBDOMAIN="$(us_config_subdomain_of "$NOMAD_DOMAIN")"
-  MERIDIAN_SUBDOMAIN="$(us_config_subdomain_of "$MERIDIAN_DOMAIN")"
-  WHOAMI_SUBDOMAIN="$(us_config_subdomain_of "$WHOAMI_DOMAIN")"
 
   export LOCAL_DOMAIN SERVER_HOSTNAME LAN_INTERFACE LAN_IP LAN_IP_IS_RESERVED
-  export DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN
-  export DNS_SUBDOMAIN NOMAD_SUBDOMAIN MERIDIAN_SUBDOMAIN WHOAMI_SUBDOMAIN
-  export RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT
-  export INSTALL_ADGUARD INSTALL_PROJECT_NOMAD INSTALL_WHOAMI INSTALL_MERIDIAN
-  export APPSTORE_SLUG APPSTORE_URL
+  export DNS_DOMAIN
+  export DNS_SUBDOMAIN
+  export RUNTIPI_VERSION RUNTIPI_ROOT
+  export INSTALL_ADGUARD
   export ADGUARD_UPSTREAM_DNS DISABLE_RESOLVED_STUB ENABLE_LOCAL_HTTPS MANAGE_FIREWALL
 }
 
@@ -165,37 +151,18 @@ us_config_validate() {
     errors=$((errors + 1))
   fi
 
-  # Every service label must satisfy Runtipi's localSubdomain pattern.
-  local pair name label
-  for pair in \
-    "DNS_DOMAIN:${DNS_SUBDOMAIN}" \
-    "NOMAD_DOMAIN:${NOMAD_SUBDOMAIN}" \
-    "MERIDIAN_DOMAIN:${MERIDIAN_SUBDOMAIN}" \
-    "WHOAMI_DOMAIN:${WHOAMI_SUBDOMAIN}"; do
-    name="${pair%%:*}"
-    label="${pair#*:}"
-    if [[ ! "$label" =~ ^[a-zA-Z0-9-]{1,63}$ ]]; then
-      us_error "${name} must be a single label under ${LOCAL_DOMAIN} (got label '${label}')."
-      errors=$((errors + 1))
-    fi
-  done
-
-  # Distinct labels; two apps on one hostname is a silent routing collision.
-  local dupes
-  dupes="$(printf '%s\n' "$DNS_SUBDOMAIN" "$NOMAD_SUBDOMAIN" \
-    "$MERIDIAN_SUBDOMAIN" "$WHOAMI_SUBDOMAIN" | sort | uniq -d)"
-  if [[ -n "$dupes" ]]; then
-    us_error "Duplicate service hostname label(s): ${dupes//$'\n'/, }"
+  # Every service label must satisfy Runtipi's localSubdomain pattern. AdGuard
+  # is the only service this installer routes, so there is one label to check
+  # and nothing it can collide with.
+  if [[ ! "$DNS_SUBDOMAIN" =~ ^[a-zA-Z0-9-]{1,63}$ ]]; then
+    us_error "DNS_DOMAIN must be a single label under ${LOCAL_DOMAIN} (got label '${DNS_SUBDOMAIN}')."
     errors=$((errors + 1))
   fi
 
-  local v
-  for v in "$RUNTIPI_VERSION" "$NOMAD_VERSION"; do
-    if [[ "$v" != "stable" && ! "$v" =~ ^v?[0-9] ]]; then
-      us_error "Version must be 'stable' or an exact tag like v4.10.1 (got '${v}')."
-      errors=$((errors + 1))
-    fi
-  done
+  if [[ "$RUNTIPI_VERSION" != "stable" && ! "$RUNTIPI_VERSION" =~ ^v?[0-9] ]]; then
+    us_error "Version must be 'stable' or an exact tag like v4.10.1 (got '${RUNTIPI_VERSION}')."
+    errors=$((errors + 1))
+  fi
 
   ((errors == 0)) || us_die "Configuration invalid (${errors} error(s)). Nothing was changed."
   us_ok "Configuration valid (LAN_IP=${LAN_IP}, LOCAL_DOMAIN=${LOCAL_DOMAIN})"
@@ -211,10 +178,8 @@ us_config_persist() {
     echo
     local k
     for k in SERVER_HOSTNAME LAN_INTERFACE LAN_IP LAN_IP_IS_RESERVED LOCAL_DOMAIN \
-      DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN \
-      RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT \
-      INSTALL_ADGUARD INSTALL_PROJECT_NOMAD INSTALL_WHOAMI INSTALL_MERIDIAN \
-      APPSTORE_SLUG APPSTORE_URL ADGUARD_UPSTREAM_DNS \
+      DNS_DOMAIN RUNTIPI_VERSION RUNTIPI_ROOT \
+      INSTALL_ADGUARD ADGUARD_UPSTREAM_DNS \
       DISABLE_RESOLVED_STUB ENABLE_LOCAL_HTTPS MANAGE_FIREWALL; do
       printf '%s=%q\n' "$k" "${!k}"
     done

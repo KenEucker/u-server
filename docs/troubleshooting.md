@@ -8,7 +8,7 @@ Start here:
 ```
 
 `doctor.sh` accepts a section filter: `--dns`, `--traefik`, `--docker`,
-`--runtipi`, `--nomad`, `--versions`, `--ports`, `--drift`, `--logs`.
+`--runtipi`, `--versions`, `--ports`, `--drift`, `--logs`.
 
 Installation logs are in `/var/log/u-server/`, one file per stage.
 
@@ -108,7 +108,7 @@ dig @192.168.8.10 anything.home.arpa +short
 
 **Returns the server IP** → DNS works; the client is the problem. Its DHCP
 lease still carries an old resolver. Renew the lease or reconnect. Verify with
-`nslookup nomad.home.arpa` — check *which server* answered.
+`nslookup dns.home.arpa` — check *which server* answered.
 
 **Returns nothing** → AdGuard is not answering. See below.
 
@@ -207,7 +207,7 @@ http://home.arpa
 That is what Runtipi's own Traefik router binds, and `LOCAL_DOMAIN` is a
 single value driving both the dashboard hostname and the app suffix, so a
 `server.` name cannot be substituted for it (it would move every app to
-`nomad.server.home.arpa`).
+`<app>.server.home.arpa`).
 
 An early revision published `server.home.arpa` as an extra route; it was
 removed. If you installed that version, `scripts/30-runtipi-config.sh` deletes
@@ -241,76 +241,18 @@ Image pulls can be slow. Watch progress:
 docker logs -f runtipi
 ```
 
-Project NOMAD's first boot waits on MySQL initialisation and can take several
-minutes.
+An app whose first boot initialises a database can take several minutes.
 
-### App store won't register
+### A custom app store won't register
 
 Runtipi needs an **HTTPS** git URL with `apps/` at the repository root.
-`file://` and local paths do not work.
-
-```bash
-./tools/publish-appstore.sh        # publish the branch
-git ls-remote --heads <origin> appstore   # confirm it exists
-sudo ./install.sh --stage 60-appstore
-```
+`file://` and local paths do not work. This installer registers no store of its
+own; stores are added from the Runtipi dashboard.
 
 ### I changed an app definition and nothing happened
 
-Runtipi caches its clone of the store. Publish, then re-pull:
-
-```bash
-./tools/validate-appstore.sh
-./tools/publish-appstore.sh
-sudo ./update.sh appstore
-```
-
-Also bump `tipi_version` in `config.json` — Runtipi uses it to detect changes.
-
----
-
-## Project NOMAD
-
-### Child services fail to start
-
-Usually the hardcoded network is missing:
-
-```bash
-docker network inspect project-nomad_default
-```
-
-If absent, NOMAD cannot attach children. Reinstall the app so Compose recreates
-it. Do **not** create it by hand — Compose refuses to adopt a network without
-its labels.
-
-### Child services start but their data is empty / in the wrong place
-
-The storage contract is broken. Check:
-
-```bash
-./doctor.sh --nomad
-docker inspect nomad_admin --format '{{json .Mounts}}'
-```
-
-`/app/storage` must be a **bind** with a real host `Source`. If it is a
-volume, or the container is not named `nomad_admin`, NOMAD cannot resolve host
-paths for child mounts. See [project-nomad.md](project-nomad.md).
-
-### NOMAD says an update is available
-
-Ignore it inside NOMAD. Runtipi owns the core stack here, and NOMAD's
-self-updater is deliberately not installed. Update from the host:
-
-```bash
-./update.sh --check
-sudo ./update.sh nomad
-```
-
-### `resolve-versions.sh` says a release has no image
-
-Real, and worth knowing: a GitHub release does not guarantee a published
-container image, and sidecars move on their own version lines. The tool falls
-back to the newest tag that actually exists in the registry.
+Runtipi caches its clone of the store. Re-pull it from the dashboard, and bump
+`tipi_version` in `config.json` — Runtipi uses it to detect changes.
 
 ---
 
