@@ -61,26 +61,8 @@ else
   add "ghcr.io/runtipi/runtipi:latest" "runtipi-core (fallback, tag set by CLI)"
 fi
 
-# ---------------------------------------------------------------------------
-# App store definitions
-# ---------------------------------------------------------------------------
-extract_images() {
-  # Deliberately simple: matches `image: value` at any indentation. The app
-  # definitions in this repo are plain YAML with no anchors or templating.
-  grep -hoE '^[[:space:]]*image:[[:space:]]*[^[:space:]#]+' "$1" 2>/dev/null |
-    sed -E 's/^[[:space:]]*image:[[:space:]]*//'
-}
-
-for dir in "${US_ROOT_DIR}"/appstore/apps/*/; do
-  app="$(basename "$dir")"
-  compose="${dir}docker-compose.yml"
-  [[ -f "$compose" ]] || continue
-  available="$(jq -r '.available // true' "${dir}config.json" 2>/dev/null || echo true)"
-  [[ "$available" == "true" ]] || continue
-  while IFS= read -r img; do
-    [[ -n "$img" ]] && add "$img" "app:${app}"
-  done < <(extract_images "$compose")
-done
+# Applications are installed from Runtipi's own app store, so their images are
+# not knowable from this repository. Only the platform's own images are listed.
 
 # ---------------------------------------------------------------------------
 # Output

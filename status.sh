@@ -20,8 +20,6 @@ source "${US_LIB_DIR}/docker.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
-# shellcheck source=lib/nomad.sh
-source "${US_LIB_DIR}/nomad.sh"
 
 us_init "status"
 us_config_load
@@ -95,7 +93,7 @@ fi
 printf '\nDNS\n'
 if us_config_is_true "$INSTALL_ADGUARD"; then
   probe="status-$(date +%s).${LOCAL_DOMAIN}"
-  for name in "$LOCAL_DOMAIN" "$NOMAD_DOMAIN" "$probe"; do
+  for name in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "$probe"; do
     if us_adguard_verify_resolution "$name"; then
       us_status_ok "${name} -> ${LAN_IP}"
     else
@@ -129,9 +127,6 @@ else
   us_status_warn "could not query the Runtipi API for installed apps"
 fi
 
-us_config_is_true "$INSTALL_MERIDIAN" ||
-  us_status_skip "Meridian not installed (scaffold only)"
-
 # --- ROUTES ----------------------------------------------------------------
 printf '\nROUTES\n'
 route_check() {
@@ -148,8 +143,6 @@ route_check() {
 
 route_check "$LOCAL_DOMAIN"
 us_config_is_true "$INSTALL_ADGUARD" && route_check "$DNS_DOMAIN"
-us_config_is_true "$INSTALL_PROJECT_NOMAD" && route_check "$NOMAD_DOMAIN"
-us_config_is_true "$INSTALL_WHOAMI" && route_check "$WHOAMI_DOMAIN"
 
 # --- Summary ---------------------------------------------------------------
 printf '\n'

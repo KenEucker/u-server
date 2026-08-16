@@ -177,22 +177,6 @@ us_docker_verify() {
   us_manifest_set_component docker "$v" "$(jq -nc --arg c "$c" '{compose: $c}')"
 }
 
-# us_docker_network_ensure <name> - create a user-defined bridge if absent.
-# Used for Project NOMAD's hardcoded child-service network.
-us_docker_network_ensure() {
-  local name="$1"
-  if docker network inspect "$name" >/dev/null 2>&1; then
-    us_debug "Docker network '${name}' already exists"
-    return 0
-  fi
-  us_info "Creating Docker network '${name}'"
-  us_run docker network create "$name"
-}
-
-us_docker_network_exists() {
-  docker network inspect "$1" >/dev/null 2>&1
-}
-
 us_docker_container_state() {
   docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null
 }

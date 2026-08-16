@@ -23,18 +23,14 @@ must carry or the installer must be able to skip.
 | 4 | `github.com` release asset | `20-runtipi` | `runtipi-cli-linux-<arch>.tar.gz` |
 | 5 | Docker Hub | Runtipi core | `traefik`, `postgres:14`, `rabbitmq:4-alpine` |
 | 6 | `ghcr.io` | Runtipi core | `ghcr.io/runtipi/runtipi` |
-| 7 | `github.com` git clone (HTTPS) | `60-appstore` | The u-server app store branch, cloned by isomorphic-git |
-| 8 | `github.com` git clone (HTTPS) | Runtipi bootstrap | Official `runtipi-appstore`, needed for the AdGuard app |
-| 9 | Docker Hub | apps | `adguard/adguardhome`, `mysql:8.0`, `redis:7-alpine`, `traefik/whoami` |
-| 10 | `ghcr.io` | Project NOMAD | `project-nomad`, `project-nomad-disk-collector` |
-| 11 | `raw.githubusercontent.com` | `lib/nomad.sh` | Contract drift check — **already advisory**, fails soft |
+| 7 | `github.com` git clone (HTTPS) | Runtipi bootstrap | Official `runtipi-appstore`, cloned by isomorphic-git; needed for the AdGuard app |
+| 8 | Docker Hub | apps | `adguard/adguardhome`, plus whatever you install later |
 
 ### Runtime (after installation)
 
 | Dependency | Impact when absent |
 |---|---|
 | AdGuard upstream resolvers | Internet name resolution fails. `*.home.arpa` is **unaffected** — rewrites are matched before forwarding. |
-| NOMAD content downloads | User-initiated from NOMAD's UI; not an installer concern. |
 | Runtipi update checks | Cosmetic "update available" indicator only. |
 
 **The platform itself has no runtime Internet dependency.** Verified by
@@ -54,17 +50,13 @@ and no installation. A bundle builder can source it on an Internet-connected
 machine, resolve exactly what an offline install would resolve, and enumerate
 the payload — reusing the logic rather than reimplementing it.
 
-### Everything is pinned to immutable tags
+### Immutable tags matter for a bundle
 
-`tools/validate-appstore.sh` **fails CI** on any image without an explicit tag,
-and on `:latest`. Mutable tags would make a bundle unreproducible: what you
-saved and what a later install expects could differ silently.
-
-### `pull_policy: always` was removed
-
-Upstream's NOMAD compose sets `pull_policy: always` on three services. That
-forces a registry round-trip on every start and would break an air-gapped node
-even when the image is already loaded locally. The Runtipi package omits it.
+Any app definition consumed here should pin an explicit, non-`:latest` tag.
+Mutable tags would make a bundle unreproducible: what you saved and what a
+later install expects could differ silently. The same applies to
+`pull_policy: always`, which forces a registry round-trip on every start and
+would break an air-gapped node even when the image is already loaded.
 **Any future app definition must do the same** — this is now a house rule.
 
 ### The image list already exists
@@ -107,8 +99,7 @@ Not built. This is the shape it should take.
 
 ```bash
 ./tools/build-offline-bundle.sh \
-    --app project-nomad \
-    --app whoami \
+    --app adguard \
     --output ./u-server-bundle
 ```
 
@@ -118,8 +109,8 @@ Not built. This is the shape it should take.
 3. Download the resolved Runtipi CLI asset.
 4. `docker pull` + `docker save` every image from
    `tools/list-required-images.sh --digests`.
-5. Snapshot the u-server app store **and** the official Runtipi app store
-   (needed for AdGuard) as plain directories.
+5. Snapshot the official Runtipi app store (needed for AdGuard), plus any
+   other store the target node uses, as plain directories.
 6. Emit checksums and a manifest mirroring `installed-manifest.json`.
 
 ```
@@ -129,7 +120,6 @@ u-server-bundle/
 ├── cli/                    runtipi-cli-linux-x86_64.tar.gz
 ├── images/                 *.tar from docker save
 ├── appstores/
-│   ├── u-server/           apps/ ...
 │   └── runtipi/            apps/ ...
 └── checksums.sha256
 ```

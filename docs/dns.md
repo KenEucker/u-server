@@ -10,9 +10,9 @@ AdGuard Home    hostname  ──►  server IP        set once, never again
 Traefik         hostname  ──►  container        generated per app
 ```
 
-A browser asking for `nomad.home.arpa` gets `192.168.8.10` from AdGuard — the
-same answer it would get for `whoami.home.arpa`, or `anything-at-all.home.arpa`.
-It then opens an HTTP connection to that address with `Host: nomad.home.arpa`,
+A browser asking for `dns.home.arpa` gets `192.168.8.10` from AdGuard — the
+same answer it would get for `media.home.arpa`, or `anything-at-all.home.arpa`.
+It then opens an HTTP connection to that address with `Host: dns.home.arpa`,
 and **Traefik** uses that header to pick the container.
 
 This is why adding an app needs no DNS work: the wildcard already answers for
@@ -46,7 +46,7 @@ file wholesale on shutdown, so hand-edits made while it runs are lost.
 Verify at any time:
 
 ```bash
-dig @192.168.8.10 nomad.home.arpa +short
+dig @192.168.8.10 dns.home.arpa +short
 dig @192.168.8.10 anything-random.home.arpa +short    # proves the wildcard
 ```
 
@@ -131,7 +131,7 @@ Secondary 8.8.8.8        ← breaks home.arpa, intermittently
 
 Clients do **not** treat these as ordered "try the first, fall back to the
 second". They treat them as interchangeable, and many query them in parallel
-or rotate between them. When a query for `nomad.home.arpa` happens to go to
+or rotate between them. When a query for `dns.home.arpa` happens to go to
 `8.8.8.8`, the answer is `NXDOMAIN` — authoritatively "this does not exist".
 
 The result is the worst kind of fault: it works most of the time, fails
@@ -151,7 +151,7 @@ answers are a second AdGuard instance or a DHCP reservation you can change in
 From a LAN client, after renewing its DHCP lease:
 
 ```bash
-nslookup nomad.home.arpa
+nslookup dns.home.arpa
 # should return 192.168.8.10, served by 192.168.8.10
 ```
 

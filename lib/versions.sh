@@ -31,13 +31,11 @@ source "${US_LIB_DIR}/common.sh"
 # runtipi/runtipi is at v4.10.1). Resolving against runtipi/cli would install a
 # CLI several minor versions behind the platform. See docs/runtipi.md.
 #
-# Both constants are read by the stage scripts, doctor.sh, update.sh and
-# tools/resolve-versions.sh, all of which source this file. shellcheck
-# analyses each file in isolation and cannot see that, hence the suppressions.
+# Read by the stage scripts, doctor.sh and update.sh, all of which source this
+# file. shellcheck analyses each file in isolation and cannot see that, hence
+# the suppression.
 # shellcheck disable=SC2034
 US_RUNTIPI_REPO="runtipi/runtipi"
-# shellcheck disable=SC2034
-US_NOMAD_REPO="Crosstalk-Solutions/project-nomad"
 
 # ---------------------------------------------------------------------------
 # GitHub API

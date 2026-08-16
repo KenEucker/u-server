@@ -99,9 +99,9 @@ check_false "'maybe'" us_config_is_true "maybe"
 # ---------------------------------------------------------------------------
 printf '\nus_config_subdomain_of\n'
 LOCAL_DOMAIN="home.arpa"
-check "nomad.home.arpa -> nomad"       "nomad"    "$(us_config_subdomain_of nomad.home.arpa)"
+check "dns.home.arpa -> dns"           "dns"      "$(us_config_subdomain_of dns.home.arpa)"
 check "grafana.home.arpa -> grafana"   "grafana"  "$(us_config_subdomain_of grafana.home.arpa)"
-check "bare label passes through"      "whoami"   "$(us_config_subdomain_of whoami)"
+check "bare label passes through"      "media"    "$(us_config_subdomain_of media)"
 # A name outside LOCAL_DOMAIN is returned intact so validation can reject it
 # with a useful message rather than silently truncating.
 check "foreign domain kept intact"     "a.example.com" "$(us_config_subdomain_of a.example.com)"
@@ -112,53 +112,39 @@ printf '\nus_config_validate\n'
 LAN_IP="192.168.8.10"
 LOCAL_DOMAIN="home.arpa"
 DNS_DOMAIN="dns.home.arpa"
-NOMAD_DOMAIN="nomad.home.arpa"
-MERIDIAN_DOMAIN="meridian.home.arpa"
-WHOAMI_DOMAIN="whoami.home.arpa"
 RUNTIPI_VERSION="stable"
-NOMAD_VERSION="v1.34.0"
-DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
-MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
+DNS_SUBDOMAIN=dns
 
 check_true "accepts a valid configuration" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
-  MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
-  RUNTIPI_VERSION=stable NOMAD_VERSION=stable
+  DNS_SUBDOMAIN=dns RUNTIPI_VERSION=stable
   us_config_validate >/dev/null 2>&1'
 
-# Duplicate hostnames are a silent routing collision, so they must be rejected.
-check_false "rejects duplicate service labels" bash -c '
+# The service label must satisfy Runtipi's localSubdomain pattern; a dotted
+# value means DNS_DOMAIN was not a single label under LOCAL_DOMAIN.
+check_false "rejects a service label that is not a single label" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  DNS_SUBDOMAIN=nomad NOMAD_SUBDOMAIN=nomad
-  MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
-  RUNTIPI_VERSION=stable NOMAD_VERSION=stable
+  DNS_SUBDOMAIN=dns.example.com RUNTIPI_VERSION=stable
   us_config_validate >/dev/null 2>&1'
 
 check_false "rejects .local as LOCAL_DOMAIN" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.local
-  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
-  MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
-  RUNTIPI_VERSION=stable NOMAD_VERSION=stable
+  DNS_SUBDOMAIN=dns RUNTIPI_VERSION=stable
   us_config_validate >/dev/null 2>&1'
 
 check_false "rejects an invalid LAN_IP" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=999.1.1.1 LOCAL_DOMAIN=home.arpa
-  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
-  MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
-  RUNTIPI_VERSION=stable NOMAD_VERSION=stable
+  DNS_SUBDOMAIN=dns RUNTIPI_VERSION=stable
   us_config_validate >/dev/null 2>&1'
 
 check_false "rejects a malformed version policy" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
-  MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
-  RUNTIPI_VERSION=newest NOMAD_VERSION=stable
+  DNS_SUBDOMAIN=dns RUNTIPI_VERSION=newest
   us_config_validate >/dev/null 2>&1'
 
 # ---------------------------------------------------------------------------
@@ -197,28 +183,6 @@ check_false "unsupported architecture is rejected" us_runtipi_asset_name
 unset -f uname
 
 # ---------------------------------------------------------------------------
-printf '\nProject NOMAD contract constants\n'
-# shellcheck source=lib/nomad.sh
-source "${US_LIB_DIR}/nomad.sh" 2>/dev/null
-# These are contracts with upstream source, not preferences. If one changes,
-# the app store package must change with it — see lib/nomad.sh.
-check "child network name" "project-nomad_default" "$(us_nomad_network_name)"
-check "admin container name" "nomad_admin" "$US_NOMAD_ADMIN_CONTAINER"
-check "storage mount destination" "/app/storage" "$US_NOMAD_STORAGE_DEST"
-
-# The app store package must actually honour those constants.
-nomad_compose="${US_ROOT_DIR}/appstore/apps/project-nomad/docker-compose.yml"
-check_true "package declares the literal child network name" \
-  grep -q "name: project-nomad_default" "$nomad_compose"
-check_true "package pins container_name: nomad_admin" \
-  grep -q "container_name: nomad_admin" "$nomad_compose"
-check_true "package binds /app/storage" \
-  grep -q ":/app/storage" "$nomad_compose"
-# Contract 3: the self-updater must stay out of the package.
-check_false "package omits the upstream updater sidecar" \
-  grep -q "sidecar-updater" "$nomad_compose"
-
-# ---------------------------------------------------------------------------
 printf '\nRuntipi app identity matching\n'
 # shellcheck source=lib/runtipi.sh
 source "${US_LIB_DIR}/runtipi.sh" 2>/dev/null
@@ -251,7 +215,7 @@ if us_have jq; then
   check_true "presence is detected via appName + appStoreSlug" \
     us_runtipi_app_present_in "$split_shape" "adguard:migrated"
   check_false "a different app is not a match" \
-    us_runtipi_app_present_in "$split_shape" "nomad:u-server"
+    us_runtipi_app_present_in "$split_shape" "grafana:migrated"
 
   # The store slug is discovered, not fixed, so the same app under a different
   # slug must be found by name — that is what stops a second install being
@@ -261,7 +225,7 @@ if us_have jq; then
   check "recorded urn is found by name from a urn field" "adguard:migrated" \
     "$(us_runtipi_app_urn_from "$urn_shape" "adguard")"
   check "an uninstalled app yields no urn" "" \
-    "$(us_runtipi_app_urn_from "$urn_shape" "nomad")"
+    "$(us_runtipi_app_urn_from "$urn_shape" "grafana")"
 
   # Malformed or empty payloads must answer "absent", never error out: the
   # callers treat a non-answer as "keep waiting", and a jq crash there is

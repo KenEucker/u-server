@@ -125,7 +125,7 @@ us_adguard_rewrite_ensure() {
 
 # us_adguard_configure_wildcard
 # Two entries are required, not one:
-#   *.home.arpa  covers every service hostname (nomad, dns, whoami, ...)
+#   *.home.arpa  covers every service hostname (dns, and any app you add)
 #   home.arpa    covers the apex, which the wildcard does NOT match and which
 #                Runtipi's dashboard router binds natively.
 us_adguard_configure_wildcard() {

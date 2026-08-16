@@ -23,8 +23,6 @@ source "${US_LIB_DIR}/versions.sh"
 source "${US_LIB_DIR}/docker.sh"
 # shellcheck source=lib/runtipi.sh
 source "${US_LIB_DIR}/runtipi.sh"
-# shellcheck source=lib/nomad.sh
-source "${US_LIB_DIR}/nomad.sh"
 
 purge_data=0
 assume_yes=0
@@ -78,7 +76,7 @@ if ((purge_data)); then
 
   --purge-data WAS GIVEN. Application data WILL BE DELETED:
       ${appdata}
-  That includes Project NOMAD content, databases, and every app's data.
+  That includes every installed app's content and databases.
   This cannot be undone.
 EOF
 else
@@ -101,17 +99,6 @@ fi
 if [[ -x "$(us_runtipi_cli)" ]]; then
   us_info "Stopping Runtipi"
   us_runtipi_stop || true
-fi
-
-# Remove the NOMAD child network if nothing is using it. Containers NOMAD
-# created are the user's data plane, so we only remove the empty network.
-if us_docker_network_exists "$(us_nomad_network_name)" 2>/dev/null; then
-  if [[ -z "$(us_nomad_child_services)" ]]; then
-    us_run docker network rm "$(us_nomad_network_name)" || true
-  else
-    us_warn "Network $(us_nomad_network_name) still has containers attached; leaving it."
-    us_warn "Remove them from Docker manually if you want it gone."
-  fi
 fi
 
 # --- Restore host DNS ------------------------------------------------------

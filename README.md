@@ -20,9 +20,10 @@ Afterwards, from any LAN client using this server for DNS:
 ```
 http://home.arpa            Runtipi dashboard
 http://dns.home.arpa        AdGuard Home
-http://nomad.home.arpa      Project NOMAD
-http://whoami.home.arpa     routing test
 ```
+
+Every application you install from Runtipi's app store gets its own
+`<name>.home.arpa` on the same basis, with no further DNS work.
 
 ## What this is
 
@@ -33,11 +34,10 @@ application as an ordinary workload on top of it.
 
 ## What this is not
 
-- **Not a Project NOMAD appliance.** NOMAD is one app installed from an app
-  store. Nothing in the installer is shaped around it.
-- **Not a Meridian appliance.** Meridian is a second app, shipped here as an
-  honest scaffold because its upstream could not be identified. See
-  [`appstore/apps/meridian/metadata/description.md`](appstore/apps/meridian/metadata/description.md).
+- **Not an appliance for any particular application.** This installer ships no
+  applications of its own and registers no app store of its own. Apps are
+  installed from Runtipi's dashboard after the platform is up, and nothing in
+  the installer is shaped around any of them.
 - **Not an offline installer — yet.** This phase proves the architecture
   online. The design keeps the air-gapped path open; see
   [docs/future-offline-design.md](docs/future-offline-design.md).
@@ -59,13 +59,10 @@ application as an ordinary workload on top of it.
                              │
       ┌──────────────┬───────┴────────┬──────────────────┐
       ▼              ▼                ▼                  ▼
-   home.arpa     dns.home.arpa  nomad.home.arpa  whoami.home.arpa
+   home.arpa     dns.home.arpa   app.home.arpa    other.home.arpa
       │              │                │                  │
-   Runtipi        AdGuard         NOMAD core         any container
-   dashboard                          │
-                                      │ project-nomad_default
-                                      ▼
-                                NOMAD child apps
+   Runtipi        AdGuard        any container      any container
+   dashboard
 ```
 
 The division of labour is the important part, and it is what makes adding a
@@ -99,8 +96,8 @@ values you are most likely to change:
 | `LAN_IP` | The address every `*.home.arpa` name resolves to. Must not change — reserve it on your router or run `tools/set-static-ip.sh`. Auto-detected if blank. |
 | `LAN_IP_IS_RESERVED` | Set true if `LAN_IP` is DHCP-assigned but reserved on your router. Preflight cannot detect a reservation, so this is you asserting it. See [docs/networking.md](docs/networking.md). |
 | `LOCAL_DOMAIN` | `home.arpa` (RFC 8375). Do **not** use `.local` — that is mDNS. |
-| `RUNTIPI_VERSION` / `NOMAD_VERSION` | `stable`, or an exact tag like `v4.10.1` |
-| `INSTALL_ADGUARD` / `INSTALL_PROJECT_NOMAD` / `INSTALL_WHOAMI` | Which workloads to install |
+| `RUNTIPI_VERSION` | `stable`, or an exact tag like `v4.10.1` |
+| `INSTALL_ADGUARD` | Whether to install AdGuard Home and the wildcard DNS it serves |
 | `ENABLE_LOCAL_HTTPS` | `false` for milestone 1; HTTP on the LAN |
 | `MANAGE_FIREWALL` | `false` by default — this installer will not risk locking you out of SSH |
 
@@ -125,32 +122,18 @@ Upgrades are always deliberate:
 sudo ./update.sh runtipi   # upgrade, with before/after recorded
 ```
 
-Nothing is pinned permanently to today's releases: `./tools/resolve-versions.sh`
-re-resolves app definitions against upstream, verifying that a published
-release actually has a matching container image before writing it.
-
-## Custom app store
-
-App definitions live in [`appstore/apps/`](appstore/apps/). Runtipi requires
-app stores to be HTTPS git repositories with `apps/` at the **root**, so
-`tools/publish-appstore.sh` publishes that directory to a dedicated `appstore`
-branch, which Runtipi consumes via its `/tree/<branch>` URL suffix.
-
-```
-./tools/validate-appstore.sh     # lint definitions (also runs in CI)
-./tools/publish-appstore.sh      # publish to the appstore branch
-```
-
 ## Adding an application
 
-1. Create `appstore/apps/<id>/config.json` and `docker-compose.yml`. Copy
-   [`whoami`](appstore/apps/whoami/) — it is deliberately minimal.
-2. Mark the web service `x-runtipi: { is_main: true, internal_port: N }`.
-3. Put persistent data under `${APP_DATA_DIR}/data/...` (a **host** path).
-4. `./tools/validate-appstore.sh && ./tools/publish-appstore.sh`
-5. Install it from the Runtipi dashboard, setting the local subdomain.
+1. Open the Runtipi dashboard at `http://home.arpa` and install the app from
+   the app store Runtipi ships with.
+2. Set its **local subdomain** during install — that is the `<name>` in
+   `<name>.home.arpa`.
 
 No DNS work, no Traefik config, no installer changes.
+
+This installer registers no app store of its own. To serve your own app
+definitions, point Runtipi at a store repository with `apps/` at its **root**
+(Runtipi clones stores over HTTPS and reads apps from the repository root).
 
 ## Router setup — the one manual step
 
@@ -188,12 +171,12 @@ sudo ./install.sh --dry-run
 
 The platform aims to keep sharp edges visible rather than hidden.
 
-- **Project NOMAD mounts the Docker socket.** That is root-equivalent control
-  of the host, and it is how NOMAD manages its own child services. The
-  installer prints this warning before granting it, and the app description
-  repeats it. Unrelated apps stay isolated on their own Docker networks.
+- **Apps that mount the Docker socket hold root-equivalent control of the
+  host.** Runtipi shows what an app requests before you install it; treat that
+  mount as the privileged decision it is. Unrelated apps stay isolated on their
+  own Docker networks.
 - Application ports are **not** published to the LAN; Traefik is the entry
-  point. NOMAD's HTTP port in particular is reachable only through the proxy.
+  point.
 - Secrets are generated at install into `/etc/u-server/secrets.env` (`0600`)
   and never regenerated on rerun. CI fails if credential-like files are
   tracked.
@@ -219,14 +202,13 @@ Installing *new* things still requires the Internet in this phase. See
 | [docs/networking.md](docs/networking.md) | Host addressing, DHCP reservations vs. static IP, the WiFi caveat |
 | [docs/dns.md](docs/dns.md) | `home.arpa`, wildcards, the port-53 bootstrap, router setup |
 | [docs/runtipi.md](docs/runtipi.md) | How Runtipi is used, and the dashboard-hostname compromise |
-| [docs/project-nomad.md](docs/project-nomad.md) | NOMAD integration, ownership boundary, storage contract |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom-first fault guide |
 | [docs/future-offline-design.md](docs/future-offline-design.md) | Air-gap design and known Internet dependencies |
 
 ## Requirements
 
 - Ubuntu Server 22.04, 24.04 or 26.04 LTS, amd64
-- 4 GB RAM, 10 GB free disk (Project NOMAD content wants far more)
+- 4 GB RAM, 10 GB free disk (content-heavy apps want far more)
 - A static LAN address
 - **No KVM required.** Docker Engine on Linux does not use hardware
   virtualisation; preflight reports its absence as information, not an error.
