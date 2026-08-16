@@ -169,13 +169,29 @@ if [[ -n "$LAN_INTERFACE" ]]; then
   fi
 fi
 
-# A DHCP-assigned address will eventually move, and every *.home.arpa name
-# points at it. Worth a warning, not a failure.
+# Every *.home.arpa name resolves to LAN_IP, so that address must not move.
+#
+# IMPORTANT LIMITATION: this detects that the address arrived via DHCP — the
+# kernel flags it `dynamic` with a lease lifetime. It CANNOT detect a DHCP
+# reservation on the router, because a reservation is still delivered by DHCP
+# and is purely server-side state; no DHCP option tells the client "this is
+# reserved for you". So a correctly-reserved address still looks dynamic here.
+#
+# A reservation is a perfectly good answer. Set LAN_IP_IS_RESERVED=true in
+# server.env to say so and silence this.
 if [[ -n "$LAN_INTERFACE" ]] &&
   ip -4 addr show dev "$LAN_INTERFACE" 2>/dev/null | grep -q 'dynamic'; then
-  us_warn "${LAN_IP} appears to be DHCP-assigned on ${LAN_INTERFACE}."
-  us_warn "Reserve it on your router or configure it statically; every home.arpa name resolves here."
-  warnings=$((warnings + 1))
+  if us_config_is_true "$LAN_IP_IS_RESERVED"; then
+    us_ok "${LAN_IP} is DHCP-assigned, declared reserved on the router (LAN_IP_IS_RESERVED=true)"
+  else
+    us_warn "${LAN_IP} was assigned by DHCP on ${LAN_INTERFACE}."
+    us_warn "Every *.${LOCAL_DOMAIN} name resolves to it, so it must not change. Either:"
+    us_warn "  - reserve it on your router, then set LAN_IP_IS_RESERVED=true in server.env"
+    us_warn "  - or make it static:  sudo ./tools/set-static-ip.sh"
+    us_warn "This host cannot see whether a reservation already exists, so if you have"
+    us_warn "already reserved it, set LAN_IP_IS_RESERVED=true and this stops warning."
+    warnings=$((warnings + 1))
+  fi
 fi
 
 # --- Port conflicts --------------------------------------------------------

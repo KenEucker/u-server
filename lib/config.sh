@@ -66,6 +66,9 @@ us_config_load() {
   SERVER_HOSTNAME="${SERVER_HOSTNAME:-}"
   LAN_INTERFACE="${LAN_INTERFACE:-}"
   LAN_IP="${LAN_IP:-}"
+  # Operator assertion that a DHCP-assigned LAN_IP is reserved on the router.
+  # Preflight cannot detect a reservation, so this is the only way to say so.
+  LAN_IP_IS_RESERVED="${LAN_IP_IS_RESERVED:-false}"
 
   # The Runtipi dashboard is reached at the LOCAL_DOMAIN apex itself — that is
   # what its own Traefik router binds — so there is no separate dashboard
@@ -112,7 +115,7 @@ us_config_load() {
   MERIDIAN_SUBDOMAIN="$(us_config_subdomain_of "$MERIDIAN_DOMAIN")"
   WHOAMI_SUBDOMAIN="$(us_config_subdomain_of "$WHOAMI_DOMAIN")"
 
-  export LOCAL_DOMAIN SERVER_HOSTNAME LAN_INTERFACE LAN_IP
+  export LOCAL_DOMAIN SERVER_HOSTNAME LAN_INTERFACE LAN_IP LAN_IP_IS_RESERVED
   export DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN
   export DNS_SUBDOMAIN NOMAD_SUBDOMAIN MERIDIAN_SUBDOMAIN WHOAMI_SUBDOMAIN
   export RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT
@@ -207,7 +210,7 @@ us_config_persist() {
     echo "# Edit server.env in the repo and rerun install.sh instead of editing this."
     echo
     local k
-    for k in SERVER_HOSTNAME LAN_INTERFACE LAN_IP LOCAL_DOMAIN \
+    for k in SERVER_HOSTNAME LAN_INTERFACE LAN_IP LAN_IP_IS_RESERVED LOCAL_DOMAIN \
       DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN \
       RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT \
       INSTALL_ADGUARD INSTALL_PROJECT_NOMAD INSTALL_WHOAMI INSTALL_MERIDIAN \

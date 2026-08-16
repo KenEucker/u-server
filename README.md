@@ -96,7 +96,8 @@ values you are most likely to change:
 
 | Setting | Meaning |
 |---|---|
-| `LAN_IP` | The address every `*.home.arpa` name resolves to. Must be static. Auto-detected if blank. |
+| `LAN_IP` | The address every `*.home.arpa` name resolves to. Must not change — reserve it on your router or run `tools/set-static-ip.sh`. Auto-detected if blank. |
+| `LAN_IP_IS_RESERVED` | Set true if `LAN_IP` is DHCP-assigned but reserved on your router. Preflight cannot detect a reservation, so this is you asserting it. See [docs/networking.md](docs/networking.md). |
 | `LOCAL_DOMAIN` | `home.arpa` (RFC 8375). Do **not** use `.local` — that is mDNS. |
 | `RUNTIPI_VERSION` / `NOMAD_VERSION` | `stable`, or an exact tag like `v4.10.1` |
 | `INSTALL_ADGUARD` / `INSTALL_PROJECT_NOMAD` / `INSTALL_WHOAMI` | Which workloads to install |
@@ -215,6 +216,7 @@ Installing *new* things still requires the Internet in this phase. See
 | Document | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Design decisions and the upstream facts behind them |
+| [docs/networking.md](docs/networking.md) | Host addressing, DHCP reservations vs. static IP, the WiFi caveat |
 | [docs/dns.md](docs/dns.md) | `home.arpa`, wildcards, the port-53 bootstrap, router setup |
 | [docs/runtipi.md](docs/runtipi.md) | How Runtipi is used, and the dashboard-hostname compromise |
 | [docs/project-nomad.md](docs/project-nomad.md) | NOMAD integration, ownership boundary, storage contract |
