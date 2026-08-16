@@ -20,6 +20,8 @@ US_LIB_DIR="${US_ROOT_DIR}/lib"
 source "${US_LIB_DIR}/common.sh"
 # shellcheck source=lib/config.sh
 source "${US_LIB_DIR}/config.sh"
+# shellcheck source=lib/runtipi.sh
+source "${US_LIB_DIR}/runtipi.sh"
 
 us_init "list-images"
 US_LOG_LEVEL=warn # keep stdout clean for piping
