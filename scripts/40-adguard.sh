@@ -134,8 +134,26 @@ us_runtipi_wait_api 120 || us_die "Runtipi API is not reachable."
 # not from u-server's own store: there is no reason to fork an app that
 # upstream already maintains. The URN's store component is discovered rather
 # than assumed, since the default store slug has changed across Runtipi versions.
-store_slug="$(us_runtipi_api GET "marketplace/all" 2>/dev/null |
-  jq -r '.appStores[]? | select(.url | test("runtipi-appstore")) | .slug' | head -n1)"
+#
+# Discovery is best-effort and must never abort the stage, so every step below
+# is tolerated: under `set -o pipefail` an API error, or a jq filter tripping
+# over a store entry with no .url, would otherwise kill the install outright.
+# The API's stderr is kept (it names the HTTP status) instead of being hidden.
+stores_json=""
+store_slug=""
+if stores_json="$(us_runtipi_api GET "marketplace/all")"; then
+  us_debug "App stores: $(printf '%s' "$stores_json" |
+    jq -c '[.appStores[]? | {slug, url}]' 2>/dev/null || printf '%s' "$stores_json")"
+  # Match on the upstream repository URL; fall back to whatever store Runtipi
+  # shipped with, which at this stage is the only one registered (u-server's
+  # own store is added later, by 60-appstore).
+  store_slug="$(printf '%s' "$stores_json" | jq -r '
+    [.appStores[]? | select((.url // "") | test("runtipi-appstore")) | .slug] +
+    [.appStores[]? | .slug]
+    | map(select(type == "string" and . != "")) | first // empty' 2>/dev/null || true)"
+else
+  us_warn "Could not list Runtipi app stores (see the API error above)."
+fi
 
 if [[ -z "$store_slug" ]]; then
   us_warn "Could not identify the official Runtipi app store; falling back to 'migrated'."
@@ -156,7 +174,10 @@ form="$(jq -nc \
 if us_runtipi_app_install "$urn" "$form"; then
   us_ok "AdGuard Home installed and running"
 else
-  us_die "AdGuard installation failed. Check: docker logs runtipi"
+  us_error "AdGuard installation failed for URN '${urn}'."
+  us_error "If the app store slug '${store_slug}' is wrong, no such app exists there."
+  us_error "List the stores with: sudo ./doctor.sh --runtipi"
+  us_die "Check: docker logs runtipi"
 fi
 
 us_manifest_set_component adguard "app" \
