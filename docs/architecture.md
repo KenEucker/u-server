@@ -76,27 +76,47 @@ while apps get (`traefik-labels.builder.ts:55`):
 Host(`<localSubdomain>.${LOCAL_DOMAIN}`)
 ```
 
-So `LOCAL_DOMAIN=home.arpa` natively yields `http://home.arpa` for the
-dashboard and `http://nomad.home.arpa` for apps — but **not**
-`http://server.home.arpa`.
+So `LOCAL_DOMAIN` is a **single knob driving two different things**: the
+dashboard's hostname and the suffix every app hangs off. With
+`LOCAL_DOMAIN=home.arpa`:
 
-Two options were rejected before choosing a third:
+```
+http://home.arpa         dashboard
+http://nomad.home.arpa   Project NOMAD
+```
 
-| Option | Result |
-|---|---|
-| `LOCAL_DOMAIN=server.home.arpa` | Dashboard correct, but every app becomes `nomad.server.home.arpa`. Rejected. |
-| Edit Runtipi's generated `dynamic.yml` | Overwritten on boot, and edits Runtipi's own file behind its back. Rejected. |
-| **Add a separate file-provider router** | Both names work; nothing upstream is modified. **Chosen.** |
+**Decision: use the apex as the dashboard address.** It is what upstream
+binds, and the apex is genuinely claimable — `scripts/50-local-dns.sh` creates
+an explicit `home.arpa → LAN_IP` rewrite alongside the wildcard, because
+standard DNS wildcards do not cover the apex (RFC 4592) and resolvers differ
+on how they treat wildcard *rewrites*. Setting both explicitly costs one line
+and removes a class of confusing failure.
 
-Runtipi's Traefik runs a file provider over `/etc/traefik/dynamic` with
-`watch: true` (`assets/traefik/traefik.yml`), and Runtipi only ever writes
-`dynamic.yml` into that directory (`app.service.ts:118-121`). Writing a
-differently-named file there is therefore an extension point, not a conflict.
-The router forwards to `dashboard@docker` — the service Runtipi's own labels
-define — so this aliases rather than duplicates configuration.
+Upstream evidently intends this: Runtipi's TLS generation issues a certificate
+covering both names (`app.service.ts:237`):
 
-**Result:** the dashboard answers on both `home.arpa` and `server.home.arpa`.
-This is a documented compromise, implemented in `scripts/30-runtipi-config.sh`.
+```
+subjectAltName = `DNS:*.${localDomain},DNS:${localDomain}`
+```
+
+#### A `server.` hostname was built, then removed
+
+An earlier revision also published the dashboard at `server.home.arpa`, since
+the original brief specified that name. Because `LOCAL_DOMAIN` is one knob,
+that name could only be *added*, never substituted — setting
+`LOCAL_DOMAIN=server.home.arpa` would have moved every app to
+`nomad.server.home.arpa`. So it was implemented as an extra Traefik router
+through the file provider Runtipi already watches, forwarding to
+`dashboard@docker`.
+
+It worked, and it was still deleted: it bought a second name for something
+already reachable at the apex, at the cost of a generated file, a config
+variable, and a section of documentation explaining the compromise. The
+capability remains available — see the note in `lib/runtipi.sh` and git
+history — if a route Runtipi cannot express is ever genuinely needed.
+
+`scripts/30-runtipi-config.sh` removes the file on hosts that received the
+earlier version, so an upgrade converges rather than leaving a stale route.
 
 ### 2.3 App-store compose accepts arbitrary Docker keys
 
@@ -314,8 +334,9 @@ remove unrelated containers, or upgrade a healthy component.
 - **No Runtipi fork.** Upstream unmodified; every integration point used is a
   supported one.
 - **No HTTPS by default.** `ENABLE_LOCAL_HTTPS=false` keeps milestone 1 simple.
-  The Traefik alias generator already emits `websecure`/`tls` variants when it
-  is turned on. Public ACME is never used for `home.arpa` — it is not
+  Runtipi already generates a certificate covering `*.home.arpa` and
+  `home.arpa`, so enabling it later is a settings change plus distributing the
+  local CA to clients. Public ACME is never used for `home.arpa` — it is not
   delegable and the challenge cannot succeed.
 - **No firewall changes by default.** `MANAGE_FIREWALL=false`. Reconfiguring a
   firewall on a remote machine is how people lose SSH access.

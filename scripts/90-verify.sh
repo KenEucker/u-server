@@ -66,7 +66,7 @@ if us_config_is_true "$INSTALL_ADGUARD"; then
 
   # A random name proves the wildcard, not a cached specific record.
   probe="verify-$(date +%s).${LOCAL_DOMAIN}"
-  for name in "$LOCAL_DOMAIN" "$SERVER_DOMAIN" "$probe"; do
+  for name in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "$probe"; do
     if us_adguard_verify_resolution "$name"; then
       us_status_ok "${name} -> ${LAN_IP}"
     else
@@ -101,8 +101,7 @@ check_route() {
   esac
 }
 
-check_route "$LOCAL_DOMAIN" "(Runtipi dashboard, native)"
-check_route "$SERVER_DOMAIN" "(Runtipi dashboard, alias)"
+check_route "$LOCAL_DOMAIN" "(Runtipi dashboard)"
 us_config_is_true "$INSTALL_ADGUARD" && check_route "$DNS_DOMAIN" "(AdGuard)"
 us_config_is_true "$INSTALL_WHOAMI" && check_route "$WHOAMI_DOMAIN" "(routing test)"
 us_config_is_true "$INSTALL_PROJECT_NOMAD" && check_route "$NOMAD_DOMAIN" "(Project NOMAD)"

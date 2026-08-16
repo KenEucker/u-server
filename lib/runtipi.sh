@@ -468,19 +468,16 @@ us_runtipi_app_start() { us_runtipi_api POST "app-lifecycle/${1}/start" '{}' >/d
 us_runtipi_app_stop() { us_runtipi_api POST "app-lifecycle/${1}/stop" '{}' >/dev/null; }
 
 # ---------------------------------------------------------------------------
-# Traefik file-provider extras
+# Traefik file-provider notes
 # ---------------------------------------------------------------------------
-
-# us_runtipi_write_dynamic <name> - content on stdin.
+# us_runtipi_traefik_dynamic_dir() above points at the directory Runtipi's
+# Traefik watches with a file provider (watch: true, assets/traefik/traefik.yml).
+# Runtipi only ever writes dynamic.yml into it (app.service.ts), so an
+# additional, differently-named file there is a supported extension point for
+# routes Runtipi cannot express — nothing upstream rewrites or prunes it.
 #
-# Runtipi's Traefik runs a file provider over /etc/traefik/dynamic with
-# watch: true, and Runtipi itself only ever writes dynamic.yml into that
-# directory (app.service.ts). Dropping an additional, differently-named file
-# there is therefore a supported extension point rather than a file we are
-# editing behind Runtipi's back — nothing upstream rewrites or prunes it.
-us_runtipi_write_dynamic() {
-  local name="$1" dir
-  dir="$(us_runtipi_traefik_dynamic_dir)"
-  us_ensure_dir "$dir" 0755
-  us_write_if_changed "${dir}/${name}" 0644
-}
+# u-server does not currently need one. An earlier revision used this to
+# publish the dashboard at a second hostname; that was removed once the
+# LOCAL_DOMAIN apex proved sufficient. scripts/30-runtipi-config.sh still
+# cleans up the file it used to write. See git history for the helper if a
+# genuine need for a custom route appears.

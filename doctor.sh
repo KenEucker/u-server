@@ -110,7 +110,7 @@ if want dns; then
       jq -r '.[]? | "    \(.domain) -> \(.answer)"' || printf '    (none)\n'
 
     printf '\n  Resolution tests (querying %s directly):\n' "$LAN_IP"
-    for n in "$LOCAL_DOMAIN" "$SERVER_DOMAIN" "$NOMAD_DOMAIN" "doctor-$(date +%s).${LOCAL_DOMAIN}"; do
+    for n in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "$NOMAD_DOMAIN" "doctor-$(date +%s).${LOCAL_DOMAIN}"; do
       got="$(dig +short +timeout=3 "@${LAN_IP}" "$n" A 2>/dev/null | tail -n1)"
       printf '    %-40s %s\n' "$n" "${got:-<no answer>}"
     done

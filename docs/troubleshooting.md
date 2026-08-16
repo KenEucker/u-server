@@ -170,18 +170,33 @@ docker ps | grep reverse-proxy
 docker logs runtipi-reverse-proxy
 ```
 
-### `server.home.arpa` doesn't work but `home.arpa` does
+### `server.home.arpa` doesn't work
 
-The dashboard alias router is missing. Runtipi natively binds only the bare
-domain — the alias is added by u-server:
+Expected — there is no such hostname. The Runtipi dashboard lives at the bare
+local domain:
 
-```bash
-ls /opt/runtipi/.internal/traefik/dynamic/
-sudo scripts/30-runtipi-config.sh
+```
+http://home.arpa
 ```
 
-Traefik hot-reloads that directory, so no restart is needed. Background in
-[runtipi.md](runtipi.md#the-dashboard-hostname-compromise).
+That is what Runtipi's own Traefik router binds, and `LOCAL_DOMAIN` is a
+single value driving both the dashboard hostname and the app suffix, so a
+`server.` name cannot be substituted for it (it would move every app to
+`nomad.server.home.arpa`).
+
+An early revision published `server.home.arpa` as an extra route; it was
+removed. If you installed that version, `scripts/30-runtipi-config.sh` deletes
+the leftover file on the next run.
+
+### `home.arpa` itself doesn't resolve, but subdomains do
+
+The apex rewrite is missing. DNS wildcards do not cover the apex, so it is a
+separate entry:
+
+```bash
+dig @192.168.8.10 home.arpa +short        # should return the server IP
+sudo scripts/50-local-dns.sh              # recreates both rewrites
+```
 
 ### An app is reachable by IP:port but not by name
 

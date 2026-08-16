@@ -118,6 +118,36 @@ else
   us_ok "Prerequisites already present"
 fi
 
+# --- Host identity ---------------------------------------------------------
+# Only acts when SERVER_HOSTNAME is explicitly set and actually differs. The
+# shipped example leaves it blank precisely so a stock config never renames
+# somebody's machine as a side effect of installing a platform.
+#
+# /etc/hosts is updated alongside hostnamectl: leaving the old name there
+# produces "sudo: unable to resolve host" on every subsequent command.
+if [[ -n "$SERVER_HOSTNAME" ]]; then
+  current_hostname="$(hostname)"
+  if [[ "$current_hostname" == "$SERVER_HOSTNAME" ]]; then
+    us_ok "Hostname already ${SERVER_HOSTNAME}"
+  else
+    us_info "Setting hostname: ${current_hostname} -> ${SERVER_HOSTNAME}"
+    us_run hostnamectl set-hostname "$SERVER_HOSTNAME"
+    if [[ "$US_DRY_RUN" != "1" ]]; then
+      # Replace the old name on the 127.0.1.1 line Ubuntu uses, or add one.
+      if grep -qE '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+        sed -i -E "s|^(127\.0\.1\.1[[:space:]]+).*|\1${SERVER_HOSTNAME}|" /etc/hosts
+      else
+        printf '127.0.1.1\t%s\n' "$SERVER_HOSTNAME" >>/etc/hosts
+      fi
+      getent hosts "$SERVER_HOSTNAME" >/dev/null 2>&1 ||
+        us_warn "${SERVER_HOSTNAME} does not resolve locally; check /etc/hosts."
+    fi
+    us_ok "Hostname set to ${SERVER_HOSTNAME}"
+  fi
+else
+  us_debug "SERVER_HOSTNAME is blank; keeping $(hostname)"
+fi
+
 # --- Network ---------------------------------------------------------------
 us_config_validate
 

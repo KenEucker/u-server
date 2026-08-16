@@ -67,7 +67,9 @@ us_config_load() {
   LAN_INTERFACE="${LAN_INTERFACE:-}"
   LAN_IP="${LAN_IP:-}"
 
-  SERVER_DOMAIN="${SERVER_DOMAIN:-server.${LOCAL_DOMAIN}}"
+  # The Runtipi dashboard is reached at the LOCAL_DOMAIN apex itself — that is
+  # what its own Traefik router binds — so there is no separate dashboard
+  # hostname to configure.
   DNS_DOMAIN="${DNS_DOMAIN:-dns.${LOCAL_DOMAIN}}"
   NOMAD_DOMAIN="${NOMAD_DOMAIN:-nomad.${LOCAL_DOMAIN}}"
   MERIDIAN_DOMAIN="${MERIDIAN_DOMAIN:-meridian.${LOCAL_DOMAIN}}"
@@ -105,15 +107,14 @@ us_config_load() {
   # ---- derived ---------------------------------------------------------
   # Runtipi routes apps at <localSubdomain>.<LOCAL_DOMAIN>, so we need the
   # single label, not the FQDN.
-  SERVER_SUBDOMAIN="$(us_config_subdomain_of "$SERVER_DOMAIN")"
   DNS_SUBDOMAIN="$(us_config_subdomain_of "$DNS_DOMAIN")"
   NOMAD_SUBDOMAIN="$(us_config_subdomain_of "$NOMAD_DOMAIN")"
   MERIDIAN_SUBDOMAIN="$(us_config_subdomain_of "$MERIDIAN_DOMAIN")"
   WHOAMI_SUBDOMAIN="$(us_config_subdomain_of "$WHOAMI_DOMAIN")"
 
   export LOCAL_DOMAIN SERVER_HOSTNAME LAN_INTERFACE LAN_IP
-  export SERVER_DOMAIN DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN
-  export SERVER_SUBDOMAIN DNS_SUBDOMAIN NOMAD_SUBDOMAIN MERIDIAN_SUBDOMAIN WHOAMI_SUBDOMAIN
+  export DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN
+  export DNS_SUBDOMAIN NOMAD_SUBDOMAIN MERIDIAN_SUBDOMAIN WHOAMI_SUBDOMAIN
   export RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT
   export INSTALL_ADGUARD INSTALL_PROJECT_NOMAD INSTALL_WHOAMI INSTALL_MERIDIAN
   export APPSTORE_SLUG APPSTORE_URL
@@ -164,7 +165,6 @@ us_config_validate() {
   # Every service label must satisfy Runtipi's localSubdomain pattern.
   local pair name label
   for pair in \
-    "SERVER_DOMAIN:${SERVER_SUBDOMAIN}" \
     "DNS_DOMAIN:${DNS_SUBDOMAIN}" \
     "NOMAD_DOMAIN:${NOMAD_SUBDOMAIN}" \
     "MERIDIAN_DOMAIN:${MERIDIAN_SUBDOMAIN}" \
@@ -179,7 +179,7 @@ us_config_validate() {
 
   # Distinct labels; two apps on one hostname is a silent routing collision.
   local dupes
-  dupes="$(printf '%s\n' "$SERVER_SUBDOMAIN" "$DNS_SUBDOMAIN" "$NOMAD_SUBDOMAIN" \
+  dupes="$(printf '%s\n' "$DNS_SUBDOMAIN" "$NOMAD_SUBDOMAIN" \
     "$MERIDIAN_SUBDOMAIN" "$WHOAMI_SUBDOMAIN" | sort | uniq -d)"
   if [[ -n "$dupes" ]]; then
     us_error "Duplicate service hostname label(s): ${dupes//$'\n'/, }"
@@ -208,7 +208,7 @@ us_config_persist() {
     echo
     local k
     for k in SERVER_HOSTNAME LAN_INTERFACE LAN_IP LOCAL_DOMAIN \
-      SERVER_DOMAIN DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN \
+      DNS_DOMAIN NOMAD_DOMAIN MERIDIAN_DOMAIN WHOAMI_DOMAIN \
       RUNTIPI_VERSION NOMAD_VERSION RUNTIPI_ROOT \
       INSTALL_ADGUARD INSTALL_PROJECT_NOMAD INSTALL_WHOAMI INSTALL_MERIDIAN \
       APPSTORE_SLUG APPSTORE_URL ADGUARD_UPSTREAM_DNS \

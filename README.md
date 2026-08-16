@@ -18,7 +18,7 @@ sudo ./install.sh
 Afterwards, from any LAN client using this server for DNS:
 
 ```
-http://server.home.arpa     Runtipi dashboard
+http://home.arpa            Runtipi dashboard
 http://dns.home.arpa        AdGuard Home
 http://nomad.home.arpa      Project NOMAD
 http://whoami.home.arpa     routing test
@@ -59,7 +59,7 @@ application as an ordinary workload on top of it.
                              │
       ┌──────────────┬───────┴────────┬──────────────────┐
       ▼              ▼                ▼                  ▼
- server.home.arpa  dns.home.arpa  nomad.home.arpa  whoami.home.arpa
+   home.arpa     dns.home.arpa  nomad.home.arpa  whoami.home.arpa
       │              │                │                  │
    Runtipi        AdGuard         NOMAD core         any container
    dashboard                          │

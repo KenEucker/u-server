@@ -54,7 +54,7 @@ probe="us-probe-$(date +%s).${LOCAL_DOMAIN}"
 
 verify_names() {
   local failed=0 name
-  for name in "$LOCAL_DOMAIN" "$SERVER_DOMAIN" "$DNS_DOMAIN" "$probe"; do
+  for name in "$LOCAL_DOMAIN" "$DNS_DOMAIN" "$probe"; do
     if us_adguard_verify_resolution "$name"; then
       us_status_ok "${name} -> ${LAN_IP}"
     else
@@ -101,10 +101,10 @@ then
 
   # Verify, and roll back rather than leave the host unable to resolve.
   sleep 2
-  if getent hosts "$SERVER_DOMAIN" >/dev/null 2>&1; then
-    us_ok "Host resolves ${SERVER_DOMAIN} through AdGuard"
+  if getent hosts "$LOCAL_DOMAIN" >/dev/null 2>&1; then
+    us_ok "Host resolves ${LOCAL_DOMAIN} through AdGuard"
   else
-    us_warn "Host could not resolve ${SERVER_DOMAIN} after repointing the resolver."
+    us_warn "Host could not resolve ${LOCAL_DOMAIN} after repointing the resolver."
     us_warn "Reverting to the stub-listener-only configuration."
     us_write_if_changed "$US_RESOLVED_DROPIN" 0644 <<EOF || true
 # Managed by ${US_PROJECT_NAME}. Reverted: pointing the host at AdGuard broke

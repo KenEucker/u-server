@@ -95,7 +95,7 @@ fi
 printf '\nDNS\n'
 if us_config_is_true "$INSTALL_ADGUARD"; then
   probe="status-$(date +%s).${LOCAL_DOMAIN}"
-  for name in "$SERVER_DOMAIN" "$NOMAD_DOMAIN" "$probe"; do
+  for name in "$LOCAL_DOMAIN" "$NOMAD_DOMAIN" "$probe"; do
     if us_adguard_verify_resolution "$name"; then
       us_status_ok "${name} -> ${LAN_IP}"
     else
@@ -146,7 +146,7 @@ route_check() {
   esac
 }
 
-route_check "$SERVER_DOMAIN"
+route_check "$LOCAL_DOMAIN"
 us_config_is_true "$INSTALL_ADGUARD" && route_check "$DNS_DOMAIN"
 us_config_is_true "$INSTALL_PROJECT_NOMAD" && route_check "$NOMAD_DOMAIN"
 us_config_is_true "$INSTALL_WHOAMI" && route_check "$WHOAMI_DOMAIN"

@@ -228,7 +228,6 @@ cat >&2 <<EOF
   Service URLs (from any LAN client using this server for DNS):
 
       http://${LOCAL_DOMAIN}          Runtipi dashboard
-      http://${SERVER_DOMAIN}         Runtipi dashboard (alias)
 EOF
 us_config_is_true "$INSTALL_ADGUARD" &&
   printf '      http://%s             AdGuard Home\n' "$DNS_DOMAIN" >&2

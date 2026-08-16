@@ -11,7 +11,7 @@ Verified against `runtipi/runtipi` v4.10.1 (2026-08).
 | Concern | Handled by |
 |---|---|
 | Installing the CLI at an exact resolved version | `scripts/20-runtipi.sh` |
-| Local domain, dashboard alias | `scripts/30-runtipi-config.sh` |
+| Local domain configuration | `scripts/30-runtipi-config.sh` |
 | Registering the custom app store | `scripts/60-appstore.sh` |
 | All upstream-specific knowledge | `lib/runtipi.sh` (only this file) |
 
@@ -57,9 +57,7 @@ therefore no published digest to verify against. We record the SHA-256 of what
 we installed in the manifest, which gives the future offline bundler a value
 to pin and makes later tampering detectable. Transport integrity is TLS.
 
-## The dashboard hostname compromise
-
-**This is the one place the architecture bends, so it is documented in full.**
+## The dashboard hostname
 
 Runtipi's dashboard router binds the **bare** local domain
 (`docker-compose.prod.yml`):
@@ -81,47 +79,52 @@ http://home.arpa         dashboard
 http://nomad.home.arpa   Project NOMAD
 ```
 
-but not `http://server.home.arpa`.
+The dashboard is therefore at the **apex**, and there is no setting to change
+that independently: `LOCAL_DOMAIN` is one value feeding both rules, so any
+`server.`-style name can be *added* alongside the apex but never substituted
+for it. Setting `LOCAL_DOMAIN=server.home.arpa` would move every app to
+`nomad.server.home.arpa`.
 
-### What was rejected
+### The apex is properly claimed
 
-| Approach | Why not |
-|---|---|
-| `LOCAL_DOMAIN=server.home.arpa` | Fixes the dashboard, breaks every app: they become `nomad.server.home.arpa`. Trading the common case for the rare one. |
-| Edit the generated `dynamic.yml` | Runtipi rewrites it at boot (`app.service.ts:118-121`). Edits vanish, and it means fighting Runtipi for a file it owns. |
-| Patch/fork Runtipi | Explicitly out of scope, and disproportionate to a hostname alias. |
+Not a fallback — it is claimed deliberately on both layers:
 
-### What was chosen
+- **DNS.** `scripts/50-local-dns.sh` creates two rewrites: `*.home.arpa` and
+  `home.arpa`. Standard DNS wildcards do not cover the apex (RFC 4592), and
+  resolvers differ on how they treat wildcard *rewrites*, so the apex is set
+  explicitly rather than assumed.
+- **Traefik.** Runtipi's own `dashboard-local` router already binds it.
 
-Keep `LOCAL_DOMAIN=home.arpa`, and add one extra router through the file
-provider Runtipi's Traefik *already* watches:
+Upstream clearly intends the apex to be used — Runtipi's TLS generation issues
+a certificate covering both forms (`app.service.ts:237`):
 
-```yaml
-# /opt/runtipi/.internal/traefik/dynamic/u-server-dashboard.yml
-http:
-  routers:
-    u-server-dashboard-alias:
-      rule: "Host(`server.home.arpa`)"
-      entryPoints: [web]
-      service: "dashboard@docker"
+```
+subjectAltName = `DNS:*.${localDomain},DNS:${localDomain}`
 ```
 
-This is legitimate because:
+so enabling `ENABLE_LOCAL_HTTPS` later covers `https://home.arpa` with no
+extra work.
 
-- `traefik.yml` configures a file provider on `/etc/traefik/dynamic` with
-  `watch: true`.
-- Runtipi writes **only** `dynamic.yml` into that directory and never prunes
-  others, so a differently-named file is an extension point, not a conflict.
-- The router points at `dashboard@docker` — the service Runtipi's own labels
-  define — so it aliases rather than duplicates configuration. If Runtipi
-  changes the dashboard's port or middleware, the alias follows automatically.
-- Traefik's file provider hot-reloads, so no restart is needed.
+### A second hostname was built, then removed
 
-**Result:** the dashboard answers on both names. `home.arpa` keeps working;
-`server.home.arpa` is added.
+The original brief asked for the dashboard at `server.home.arpa`, and that was
+implemented: an extra router written into the Traefik file provider directory
+Runtipi already watches (`/etc/traefik/dynamic`, `watch: true`), forwarding to
+`dashboard@docker`. That is a legitimate extension point — Runtipi writes only
+`dynamic.yml` there and never prunes other files — and it worked.
 
-The generator emits `websecure` + `tls` variants when `ENABLE_LOCAL_HTTPS=true`,
-so this does not become a blocker later.
+It was removed anyway. It bought a second name for something already reachable
+at the apex, and charged a generated file, a config variable, a validation
+branch and a documentation section for it. The alternatives were worse
+(`LOCAL_DOMAIN=server.home.arpa` breaks every app; editing `dynamic.yml` loses
+the edit at boot; forking Runtipi is out of scope), but "the best of several
+poor options" is not the same as "worth doing".
+
+`scripts/30-runtipi-config.sh` deletes the leftover file on hosts that got the
+earlier version, so upgrading converges instead of leaving a stale route.
+
+If a genuinely inexpressible route is ever needed, the mechanism is documented
+in `lib/runtipi.sh` and the helper is recoverable from git history.
 
 ## Configuration surface
 

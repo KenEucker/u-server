@@ -100,7 +100,7 @@ check_false "'maybe'" us_config_is_true "maybe"
 printf '\nus_config_subdomain_of\n'
 LOCAL_DOMAIN="home.arpa"
 check "nomad.home.arpa -> nomad"       "nomad"    "$(us_config_subdomain_of nomad.home.arpa)"
-check "server.home.arpa -> server"     "server"   "$(us_config_subdomain_of server.home.arpa)"
+check "grafana.home.arpa -> grafana"   "grafana"  "$(us_config_subdomain_of grafana.home.arpa)"
 check "bare label passes through"      "whoami"   "$(us_config_subdomain_of whoami)"
 # A name outside LOCAL_DOMAIN is returned intact so validation can reject it
 # with a useful message rather than silently truncating.
@@ -111,20 +111,19 @@ printf '\nus_config_validate\n'
 # Full config validation on a known-good set.
 LAN_IP="192.168.8.10"
 LOCAL_DOMAIN="home.arpa"
-SERVER_DOMAIN="server.home.arpa"
 DNS_DOMAIN="dns.home.arpa"
 NOMAD_DOMAIN="nomad.home.arpa"
 MERIDIAN_DOMAIN="meridian.home.arpa"
 WHOAMI_DOMAIN="whoami.home.arpa"
 RUNTIPI_VERSION="stable"
 NOMAD_VERSION="v1.34.0"
-SERVER_SUBDOMAIN=server DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
 MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
 
 check_true "accepts a valid configuration" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  SERVER_SUBDOMAIN=server DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
   MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
   RUNTIPI_VERSION=stable NOMAD_VERSION=stable
   us_config_validate >/dev/null 2>&1'
@@ -133,7 +132,7 @@ check_true "accepts a valid configuration" bash -c '
 check_false "rejects duplicate service labels" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  SERVER_SUBDOMAIN=nomad DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+  DNS_SUBDOMAIN=nomad NOMAD_SUBDOMAIN=nomad
   MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
   RUNTIPI_VERSION=stable NOMAD_VERSION=stable
   us_config_validate >/dev/null 2>&1'
@@ -141,7 +140,7 @@ check_false "rejects duplicate service labels" bash -c '
 check_false "rejects .local as LOCAL_DOMAIN" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.local
-  SERVER_SUBDOMAIN=server DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
   MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
   RUNTIPI_VERSION=stable NOMAD_VERSION=stable
   us_config_validate >/dev/null 2>&1'
@@ -149,7 +148,7 @@ check_false "rejects .local as LOCAL_DOMAIN" bash -c '
 check_false "rejects an invalid LAN_IP" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=999.1.1.1 LOCAL_DOMAIN=home.arpa
-  SERVER_SUBDOMAIN=server DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
   MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
   RUNTIPI_VERSION=stable NOMAD_VERSION=stable
   us_config_validate >/dev/null 2>&1'
@@ -157,7 +156,7 @@ check_false "rejects an invalid LAN_IP" bash -c '
 check_false "rejects a malformed version policy" bash -c '
   source "'"${US_LIB_DIR}"'/config.sh" 2>/dev/null
   LAN_IP=192.168.8.10 LOCAL_DOMAIN=home.arpa
-  SERVER_SUBDOMAIN=server DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
+  DNS_SUBDOMAIN=dns NOMAD_SUBDOMAIN=nomad
   MERIDIAN_SUBDOMAIN=meridian WHOAMI_SUBDOMAIN=whoami
   RUNTIPI_VERSION=newest NOMAD_VERSION=stable
   us_config_validate >/dev/null 2>&1'
