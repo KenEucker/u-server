@@ -402,17 +402,78 @@ us_runtipi_appstore_pull() {
 # App identity is a URN: <appName>:<appStoreSlug>
 us_runtipi_urn() { printf '%s:%s' "$1" "$2"; }
 
+# _US_JQ_APP - jq prelude for reading apps/installed.
+#
+# Matching on one hardcoded path (`.installed[].app.urn`) is what made an
+# installed, running AdGuard look like it had never appeared: a field that
+# moves reads as "no such app", which is indistinguishable from "not installed
+# yet" and so waits out the entire timeout. Runtipi has expressed app identity
+# several ways across 4.x — a `urn` field, an `id` that is itself the URN
+# string, or appName and appStoreSlug as separate columns — and the container
+# has been both `.installed` and a bare array. So accept all of them and match
+# if ANY candidate identity matches. Being permissive here costs nothing: the
+# URN is a local lookup key, not a security boundary.
+#
+#   _apps    -> one record per installed app, container shape notwithstanding
+#   _urns    -> every candidate URN for a record (a stream, possibly empty)
+#   _names   -> every candidate bare app name for a record
+#   _status  -> the record's status, or "" if it has none
+_US_JQ_APP='
+def _apps:
+  (if type == "object" then (.installed // .apps // empty) else . end)
+  | if type == "array" then .[] else empty end;
+def _rec: if (type == "object" and has("app")) then .app else . end;
+def _urns:
+  _rec
+  | ( (.urn // empty),
+      (if (((.appName // "") | tostring) != "" and ((.appStoreSlug // "") | tostring) != "")
+         then ((.appName | tostring) + ":" + (.appStoreSlug | tostring))
+         else empty end),
+      (if ((.id? | type) == "string") then .id else empty end) )
+  | tostring;
+def _names:
+  _rec
+  | ( (.appName // empty),
+      (((.urn // .id // "") | tostring | split(":") | .[0]) // empty) )
+  | tostring | select(. != "");
+def _status: _rec | ((.status // "") | tostring);
+'
+
+# The three readers below are pure: payload in, answer out, no I/O. That is
+# what makes them testable against captured API shapes in tests/test-lib.sh --
+# the matching rule is the part that broke, so it is the part that gets tests.
+
+# us_runtipi_app_present_in <json> <urn> - is this app in the payload?
+us_runtipi_app_present_in() {
+  printf '%s' "$1" |
+    jq -e --arg u "$2" "${_US_JQ_APP}"'_apps | select(any(_urns; . == $u))' >/dev/null 2>&1
+}
+
+# us_runtipi_app_status_from <json> <urn> - its status, or "" if absent.
+us_runtipi_app_status_from() {
+  printf '%s' "$1" | jq -r --arg u "$2" \
+    "${_US_JQ_APP}"'first(_apps | select(any(_urns; . == $u)) | _status) // empty' \
+    2>/dev/null || true
+}
+
+# us_runtipi_app_urn_from <json> <appName> - the URN this app is recorded
+# under, whatever store it came from. Empty when it is not installed.
+us_runtipi_app_urn_from() {
+  printf '%s' "$1" | jq -r --arg n "$2" \
+    "${_US_JQ_APP}"'first(_apps | select(any(_names; . == $n)) | (first(_urns) // "")) // empty' \
+    2>/dev/null || true
+}
+
 us_runtipi_app_installed() {
   local urn="$1" json
   json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)" || return 1
-  printf '%s' "$json" | jq -e --arg u "$urn" '.installed[]? | select(.app.urn == $u)' >/dev/null 2>&1
+  us_runtipi_app_present_in "$json" "$urn"
 }
 
 us_runtipi_app_status() {
   local urn="$1" json
   json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)" || return 1
-  printf '%s' "$json" |
-    jq -r --arg u "$urn" '.installed[]? | select(.app.urn == $u) | .app.status // empty'
+  us_runtipi_app_status_from "$json" "$urn"
 }
 
 # us_runtipi_app_urn_for_name <appName>
@@ -423,9 +484,7 @@ us_runtipi_app_status() {
 us_runtipi_app_urn_for_name() {
   local name="$1" json
   json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)" || return 1
-  printf '%s' "$json" | jq -r --arg n "$name" \
-    'first(.installed[]? | select((.app.urn // "") | startswith($n + ":")) | .app.urn) // empty' \
-    2>/dev/null || true
+  us_runtipi_app_urn_from "$json" "$name"
 }
 
 # us_runtipi_app_install <urn> <form-json>
@@ -436,20 +495,28 @@ us_runtipi_app_urn_for_name() {
 us_runtipi_app_install() {
   local urn="$1" form="$2"
 
+  # Callers record the URN in the manifest, so they need the one that turned
+  # out to be real, not the one that was guessed. Always set, always exported.
+  US_RUNTIPI_RESOLVED_URN="$urn"
+  export US_RUNTIPI_RESOLVED_URN
+
   if us_runtipi_app_installed "$urn"; then
     us_ok "App '${urn}' already installed"
     return 0
   fi
 
   # Same app under a different store slug. Posting another install would ask
-  # Runtipi to add an app it already has, so stop and name the URN it recorded.
+  # Runtipi to add an app it already has; adopt the URN it recorded instead.
+  # The app being present is the fact that matters — which store it came from
+  # is bookkeeping, and Runtipi's answer is the authoritative one.
   local recorded
   recorded="$(us_runtipi_app_urn_for_name "${urn%%:*}" 2>/dev/null || true)"
   if [[ -n "$recorded" && "$recorded" != "$urn" ]]; then
-    us_error "'${urn%%:*}' is already installed as '${recorded}', not '${urn}'."
-    us_error "The app store slug in use here is not the one Runtipi recorded."
-    us_error "Set the matching slug (see: sudo ./doctor.sh --runtipi) and rerun."
-    return 1
+    us_warn "'${urn%%:*}' is installed as '${recorded}', not '${urn}'."
+    us_warn "The app store slug discovered here differs from the one Runtipi recorded."
+    us_warn "Adopting '${recorded}' (status: $(us_runtipi_app_status "$recorded" 2>/dev/null || printf 'unknown'))."
+    US_RUNTIPI_RESOLVED_URN="$recorded"
+    return 0
   fi
 
   if [[ "$US_DRY_RUN" == "1" ]]; then
@@ -472,42 +539,94 @@ us_runtipi_app_install() {
 _us_runtipi_installed_report() {
   local json="$1" report
   report="$(printf '%s' "$json" |
-    jq -r '.installed[]? | "    \(.app.urn // "<no .app.urn>")  \(.app.status // "<no .app.status>")"' \
+    jq -r "${_US_JQ_APP}"'_apps | "    \(first(_urns) // "<no identity>")  \(_status)"' \
       2>/dev/null || true)"
   if [[ -n "$report" ]]; then
     printf '%s' "$report"
   else
-    printf '    (no .installed[] entries; raw response begins: %s)' "${json:0:300}"
+    printf '    (no app records found; raw response begins: %s)' "${json:0:300}"
   fi
 }
 
-# us_runtipi_app_wait_status <urn> <wanted> <timeout>
+# _us_runtipi_app_count <apps-installed-json> - how many app records parsed.
+# Zero with a healthy API means the response shape is unreadable; non-zero
+# with no match means the identity is wrong. Different faults, different fix.
+_us_runtipi_app_count() {
+  local n
+  n="$(printf '%s' "$1" | jq -r "${_US_JQ_APP}"'[_apps] | length' 2>/dev/null || printf '0')"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  printf '%s' "$n"
+}
+
+# _us_runtipi_wait_decision <urn> <wanted>
+# What to do when a wait gives up: retry, continue, or abort. Answered by
+# US_ON_APP_WAIT_TIMEOUT when set, otherwise by asking, otherwise abort.
+# Unattended runs must never block on a prompt nobody is there to answer.
+_us_runtipi_wait_decision() {
+  local urn="$1" want="$2" reply=""
+
+  case "${US_ON_APP_WAIT_TIMEOUT:-}" in
+    retry | continue | abort)
+      us_info "US_ON_APP_WAIT_TIMEOUT=${US_ON_APP_WAIT_TIMEOUT}"
+      printf '%s' "$US_ON_APP_WAIT_TIMEOUT"
+      return 0
+      ;;
+    "") ;;
+    *) us_warn "Ignoring unknown US_ON_APP_WAIT_TIMEOUT='${US_ON_APP_WAIT_TIMEOUT}'." ;;
+  esac
+
+  if [[ ! -t 0 ]]; then
+    us_warn "Not attached to a terminal, so this cannot be asked interactively."
+    us_warn "Rerun with US_ON_APP_WAIT_TIMEOUT=retry|continue|abort to decide up front."
+    printf 'abort'
+    return 0
+  fi
+
+  us_warn "Choose how to proceed:"
+  us_warn "  r  retry   - watch '${urn}' for '${want}' again"
+  us_warn "  c  continue- accept the app as-is and run the remaining stages"
+  us_warn "  a  abort   - stop here (default)"
+  read -r -p "  [r/c/a] " reply || reply=""
+  case "${reply,,}" in
+    r | retry) printf 'retry' ;;
+    c | continue) printf 'continue' ;;
+    *) printf 'abort' ;;
+  esac
+}
+
+# _us_runtipi_poll_status <urn> <wanted> <timeout>
+# 0 = reached <wanted>, 1 = entered a failure state, 2 = gave up waiting.
 #
-# An app whose URN never matches reports an empty status, which is neither the
-# wanted state nor a failure state, so the loop simply waits out the whole
-# timeout and then blames the install. That is indistinguishable, from the
-# outside, from a slow image pull -- and it is wrong precisely when the app is
-# up and healthy in the dashboard. So: report every state change, nag with the
-# URNs actually present once waiting stops looking like normal progress, and
-# print them again on timeout.
-us_runtipi_app_wait_status() {
-  local urn="$1" want="$2" timeout="${3:-600}" waited=0 interval=5
-  local json status last_seen="" nagged=0 api_failures=0
+# The "gave up" case is deliberately not folded into failure. An app whose URN
+# never matches reports an empty status, which is neither the wanted state nor
+# a failure state; the original loop fell through both and waited out the full
+# timeout in silence before blaming an install that had in fact succeeded. So
+# this reports every state change, and stops early once continuing to wait is
+# provably pointless rather than merely slow.
+_us_runtipi_poll_status() {
+  local urn="$1" want="$2" timeout="$3" waited=0 interval=5
+  local json status last_seen="" api_failures=0 count=0
+
+  # Runtipi creates the app row immediately and only then pulls images, so an
+  # app absent from the list minutes after the install was accepted is an
+  # identity mismatch, not a slow download. Waiting out 900s cannot fix that.
+  local absent_budget="${US_APP_ABSENT_BUDGET:-180}"
+  ((absent_budget > timeout)) && absent_budget="$timeout"
 
   while ((waited < timeout)); do
     if json="$(us_runtipi_api GET "apps/installed" 2>/dev/null)"; then
-      status="$(printf '%s' "$json" |
-        jq -r --arg u "$urn" '.installed[]? | select(.app.urn == $u) | .app.status // empty' \
-          2>/dev/null || true)"
+      api_failures=0
+      status="$(us_runtipi_app_status_from "$json" "$urn")"
+      count="$(_us_runtipi_app_count "$json")"
     else
       json=""
       status=""
+      count=0
       api_failures=$((api_failures + 1))
       if ((api_failures == 3)); then
-        us_warn "Cannot read apps/installed (${api_failures} consecutive failures); still waiting."
+        us_warn "Cannot read apps/installed (3 consecutive failures); still trying."
       fi
     fi
-    [[ -n "$json" ]] && api_failures=0
 
     if [[ "$status" != "$last_seen" ]]; then
       us_info "App '${urn}': ${status:-not listed yet}"
@@ -526,15 +645,11 @@ us_runtipi_app_wait_status() {
         ;;
     esac
 
-    # Absent from the list well after the install was accepted means the URN
-    # being polled is not the URN Runtipi recorded. Say so, with the evidence.
-    if [[ -z "$status" ]] && ((waited >= 120)) && ((nagged == 0)) && [[ -n "$json" ]]; then
-      nagged=1
-      us_warn "'${urn}' is still not listed as installed after ${waited}s."
-      us_warn "Runtipi currently reports these apps:"
-      us_warn "$(_us_runtipi_installed_report "$json")"
-      us_warn "If the app IS there under a different URN, this wait is watching the"
-      us_warn "wrong name and will time out even though the app is fine."
+    if [[ -z "$status" ]] && ((waited >= absent_budget)) && [[ -n "$json" ]]; then
+      us_error "'${urn}' is not among the ${count} app(s) Runtipi reports, ${waited}s after"
+      us_error "the install was accepted. That is an identity mismatch, not a slow install."
+      us_error "$(_us_runtipi_installed_report "$json")"
+      return 2
     fi
 
     sleep "$interval"
@@ -546,10 +661,38 @@ us_runtipi_app_wait_status() {
 
   us_error "App '${urn}' did not reach '${want}' within ${timeout}s (last state: ${last_seen:-never listed})."
   if [[ -n "${json:-}" ]]; then
-    us_error "Apps Runtipi reports as installed:"
     us_error "$(_us_runtipi_installed_report "$json")"
   fi
-  return 1
+  return 2
+}
+
+# us_runtipi_app_wait_status <urn> <wanted> <timeout>
+# Wraps the poll with a way out. Giving up offers retry / continue / abort so a
+# watcher that cannot see the app never becomes a wall the operator has to kill
+# the installer to get past. US_APP_WAIT_TIMEOUT overrides the timeout,
+# US_ON_APP_WAIT_TIMEOUT answers the prompt for unattended runs.
+us_runtipi_app_wait_status() {
+  local urn="$1" want="$2" timeout="${US_APP_WAIT_TIMEOUT:-${3:-600}}" rc
+
+  while true; do
+    rc=0
+    _us_runtipi_poll_status "$urn" "$want" "$timeout" || rc=$?
+    ((rc == 2)) || return "$rc"
+
+    case "$(_us_runtipi_wait_decision "$urn" "$want")" in
+      retry)
+        us_info "Watching '${urn}' again for up to ${timeout}s."
+        ;;
+      continue)
+        us_warn "Continuing without confirming '${urn}' is ${want}, as instructed."
+        us_warn "Verify with: sudo ./doctor.sh --runtipi"
+        return 0
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
 }
 
 us_runtipi_app_start() { us_runtipi_api POST "app-lifecycle/${1}/start" '{}' >/dev/null; }
