@@ -1,0 +1,19 @@
+# Host configuration. Contains this machine's addressing; never committed.
+# Copy config/server.env.example to server.env and edit that.
+/server.env
+/server.env.*
+!/config/server.env.example
+
+# Generated secrets must never enter git.
+secrets.env
+*.pem
+*.key
+*.crt
+
+# Backups written by us_write_if_changed during convergence runs.
+*.bak
+*.bak.*
+
+# Local scratch
+/tmp/
+*.log
