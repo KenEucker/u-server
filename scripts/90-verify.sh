@@ -30,7 +30,7 @@ us_config_load
 failures=0
 note_fail() {
   us_status_fail "$1"
-  ((failures++))
+  failures=$((failures + 1))
 }
 
 us_section "Verification"
@@ -109,7 +109,7 @@ us_config_is_true "$INSTALL_PROJECT_NOMAD" && check_route "$NOMAD_DOMAIN" "(Proj
 # --- Project NOMAD ---------------------------------------------------------
 if us_config_is_true "$INSTALL_PROJECT_NOMAD"; then
   printf '\nPROJECT NOMAD\n' >&2
-  us_nomad_verify || ((failures++))
+  us_nomad_verify || failures=$((failures + 1))
 fi
 
 # --- Summary ---------------------------------------------------------------

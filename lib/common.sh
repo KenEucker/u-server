@@ -116,7 +116,7 @@ us_retry() {
     fi
     us_warn "Attempt ${n}/${attempts} failed; retrying in ${delay}s: $*"
     sleep "$delay"
-    ((n++))
+    n=$((n + 1))
   done
 }
 

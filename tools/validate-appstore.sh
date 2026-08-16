@@ -52,11 +52,11 @@ declare -A used_ports=()
 
 err() {
   us_status_fail "$1"
-  ((errors++))
+  errors=$((errors + 1))
 }
 warn() {
   us_status_warn "$1"
-  ((warnings++))
+  warnings=$((warnings + 1))
 }
 
 us_section "Validating app store"
@@ -68,6 +68,9 @@ app_dirs=("$APPSTORE_DIR"/*/)
 for dir in "${app_dirs[@]}"; do
   app="$(basename "$dir")"
   printf '\n  %s\n' "$app"
+  # Snapshot so the per-app verdict below reflects THIS app, not whether any
+  # earlier app happened to fail.
+  errors_before_app="$errors"
 
   config="${dir}config.json"
   compose="${dir}docker-compose.yml"
@@ -178,7 +181,7 @@ for dir in "${app_dirs[@]}"; do
   [[ -f "${dir}metadata/description.md" ]] ||
     warn "${app}: metadata/description.md is missing"
 
-  ((errors == 0)) && us_status_ok "${app}"
+  ((errors == errors_before_app)) && us_status_ok "${app}"
 done
 
 printf '\n'

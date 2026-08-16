@@ -29,7 +29,7 @@ us_config_load
 problems=0
 fail() {
   us_status_fail "$1"
-  ((problems++))
+  problems=$((problems + 1))
 }
 
 if ! docker info >/dev/null 2>&1; then

@@ -50,7 +50,7 @@ if ((version_supported)); then
 else
   us_warn "Ubuntu ${VERSION_ID:-unknown} is not one of the verified releases (${US_SUPPORTED_UBUNTU[*]})."
   us_warn "Installation will continue, but Docker may not publish an apt suite for this release."
-  ((warnings++))
+  warnings=$((warnings + 1))
 fi
 
 # --- Architecture ----------------------------------------------------------
@@ -59,7 +59,7 @@ case "$arch" in
   amd64 | x86_64) us_ok "Architecture ${arch}" ;;
   arm64 | aarch64)
     us_warn "Architecture ${arch}: Runtipi publishes aarch64 builds, but u-server is verified on amd64 only."
-    ((warnings++))
+    warnings=$((warnings + 1))
     ;;
   *) us_die "Unsupported architecture '${arch}'. amd64/x86_64 is required." ;;
 esac
@@ -83,7 +83,7 @@ if ((mem_mb >= 3800)); then
 else
   us_warn "Memory ${mem_mb} MiB is below the 4 GB Runtipi recommends."
   us_warn "Project NOMAD (MySQL + Redis + admin) will be tight on this machine."
-  ((warnings++))
+  warnings=$((warnings + 1))
 fi
 
 # --- Disk ------------------------------------------------------------------
@@ -98,7 +98,7 @@ if ((avail_mb >= 10240)); then
 else
   us_warn "Only $((avail_mb / 1024)) GiB free at ${check_root}; 10 GiB is the practical minimum."
   us_warn "Project NOMAD content (maps, ZIM archives, AI models) needs substantially more."
-  ((warnings++))
+  warnings=$((warnings + 1))
 fi
 
 # --- Prerequisite packages -------------------------------------------------
@@ -165,7 +165,7 @@ if [[ -n "$LAN_INTERFACE" ]]; then
     us_ok "LAN_INTERFACE ${LAN_INTERFACE} exists"
   else
     us_warn "LAN_INTERFACE '${LAN_INTERFACE}' does not exist on this host."
-    ((warnings++))
+    warnings=$((warnings + 1))
   fi
 fi
 
@@ -175,7 +175,7 @@ if [[ -n "$LAN_INTERFACE" ]] &&
   ip -4 addr show dev "$LAN_INTERFACE" 2>/dev/null | grep -q 'dynamic'; then
   us_warn "${LAN_IP} appears to be DHCP-assigned on ${LAN_INTERFACE}."
   us_warn "Reserve it on your router or configure it statically; every home.arpa name resolves here."
-  ((warnings++))
+  warnings=$((warnings + 1))
 fi
 
 # --- Port conflicts --------------------------------------------------------
@@ -215,7 +215,7 @@ if [[ -n "$dns_holder" ]]; then
   else
     us_warn "Port 53/udp is held by: ${dns_holder}"
     us_warn "AdGuard will fail to start unless this is stopped."
-    ((warnings++))
+    warnings=$((warnings + 1))
   fi
 else
   us_ok "Port 53/udp free"

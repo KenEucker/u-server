@@ -164,7 +164,7 @@ us_nomad_verify() {
     us_status_ok "NOMAD admin container (${US_NOMAD_ADMIN_CONTAINER}) is healthy"
   else
     us_status_fail "NOMAD admin container (${US_NOMAD_ADMIN_CONTAINER}) is not healthy"
-    ((failures++))
+    failures=$((failures + 1))
   fi
 
   local db
@@ -173,28 +173,28 @@ us_nomad_verify() {
     us_status_ok "NOMAD database (${db}) is healthy"
   else
     us_status_fail "NOMAD database container is not healthy"
-    ((failures++))
+    failures=$((failures + 1))
   fi
 
   if us_docker_network_exists "$US_NOMAD_NETWORK"; then
     us_status_ok "Child-service network '${US_NOMAD_NETWORK}' exists"
   else
     us_status_fail "Child-service network '${US_NOMAD_NETWORK}' is missing — NOMAD cannot start child apps"
-    ((failures++))
+    failures=$((failures + 1))
   fi
 
   if us_nomad_verify_socket; then
     us_status_ok "NOMAD has Docker socket access"
   else
     us_status_fail "NOMAD cannot reach /var/run/docker.sock — it cannot manage child services"
-    ((failures++))
+    failures=$((failures + 1))
   fi
 
   if storage="$(us_nomad_verify_storage_binding)"; then
     us_status_ok "Host storage root resolves to ${storage}"
   else
     us_status_fail "NOMAD storage binding is invalid (see lib/nomad.sh Contract 2)"
-    ((failures++))
+    failures=$((failures + 1))
   fi
 
   if us_nomad_verify_http "http://${NOMAD_DOMAIN}/api/health" ||

@@ -146,20 +146,20 @@ us_config_validate() {
 
   if [[ -z "$LAN_IP" ]]; then
     us_error "LAN_IP is empty and could not be auto-detected. Set it in server.env."
-    ((errors++))
+    errors=$((errors + 1))
   elif ! us_is_valid_ipv4 "$LAN_IP"; then
     us_error "LAN_IP is not a valid IPv4 address: ${LAN_IP}"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   if [[ "$LOCAL_DOMAIN" == *".local" || "$LOCAL_DOMAIN" == "local" ]]; then
     us_error "LOCAL_DOMAIN must not use .local (reserved for mDNS). Use home.arpa."
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   if [[ ! "$LOCAL_DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
     us_error "LOCAL_DOMAIN is not a valid domain name: ${LOCAL_DOMAIN}"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   # Every service label must satisfy Runtipi's localSubdomain pattern.
@@ -173,7 +173,7 @@ us_config_validate() {
     label="${pair#*:}"
     if [[ ! "$label" =~ ^[a-zA-Z0-9-]{1,63}$ ]]; then
       us_error "${name} must be a single label under ${LOCAL_DOMAIN} (got label '${label}')."
-      ((errors++))
+      errors=$((errors + 1))
     fi
   done
 
@@ -183,14 +183,14 @@ us_config_validate() {
     "$MERIDIAN_SUBDOMAIN" "$WHOAMI_SUBDOMAIN" | sort | uniq -d)"
   if [[ -n "$dupes" ]]; then
     us_error "Duplicate service hostname label(s): ${dupes//$'\n'/, }"
-    ((errors++))
+    errors=$((errors + 1))
   fi
 
   local v
   for v in "$RUNTIPI_VERSION" "$NOMAD_VERSION"; do
     if [[ "$v" != "stable" && ! "$v" =~ ^v?[0-9] ]]; then
       us_error "Version must be 'stable' or an exact tag like v4.10.1 (got '${v}')."
-      ((errors++))
+      errors=$((errors + 1))
     fi
   done
 

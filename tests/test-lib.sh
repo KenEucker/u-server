@@ -32,10 +32,10 @@ check() {
   local desc="$1" expected="$2" actual="$3"
   if [[ "$expected" == "$actual" ]]; then
     printf '  ok   %s\n' "$desc"
-    ((pass++))
+    pass=$((pass + 1))
   else
     printf '  FAIL %s\n       expected: %q\n       actual:   %q\n' "$desc" "$expected" "$actual"
-    ((fail++))
+    fail=$((fail + 1))
   fi
 }
 
@@ -44,10 +44,10 @@ check_true() {
   shift
   if "$@"; then
     printf '  ok   %s\n' "$desc"
-    ((pass++))
+    pass=$((pass + 1))
   else
     printf '  FAIL %s (expected success)\n' "$desc"
-    ((fail++))
+    fail=$((fail + 1))
   fi
 }
 
@@ -56,10 +56,10 @@ check_false() {
   shift
   if "$@"; then
     printf '  FAIL %s (expected failure)\n' "$desc"
-    ((fail++))
+    fail=$((fail + 1))
   else
     printf '  ok   %s\n' "$desc"
-    ((pass++))
+    pass=$((pass + 1))
   fi
 }
 
@@ -217,6 +217,28 @@ check_true "package binds /app/storage" \
 # Contract 3: the self-updater must stay out of the package.
 check_false "package omits the upstream updater sidecar" \
   grep -q "sidecar-updater" "$nomad_compose"
+
+# ---------------------------------------------------------------------------
+printf '\nset -e safety\n'
+# `((n++))` evaluates to the value BEFORE incrementing, and an arithmetic
+# command whose result is 0 exits 1. Every counter in this repo starts at 0, so
+# the first increment would abort the script under `set -Eeuo pipefail`.
+#
+# This bit for real: scripts/00-preflight.sh would have died on its first
+# warning (e.g. "memory below 4 GB") instead of collecting it and continuing.
+# The pattern is banned outright; use `n=$((n + 1))`, which always exits 0.
+# Scanned across the shipped scripts. tests/ is excluded because this file
+# deliberately contains the pattern, both in the prose above and in the
+# demonstration below; comment lines are excluded for the same reason.
+check "no ((var++)) in any shipped script" "" \
+  "$(grep -rn -E '\(\([a-z_]+\+\+\)\)' --include='*.sh' "$US_ROOT_DIR" 2>/dev/null |
+    grep -v '/\.git/' | grep -v '/tests/' | grep -vE ':[0-9]+:[[:space:]]*#' || true)"
+
+# Demonstrates the trap itself, so the reason for the ban stays visible.
+check_false "((n++)) really does exit non-zero when n is 0" \
+  bash -c 'n=0; ((n++))'
+check_true "n=\$((n + 1)) exits zero when n is 0" \
+  bash -c 'n=0; n=$((n + 1))'
 
 # ---------------------------------------------------------------------------
 printf '\n%s\n' "-----------------------------"
