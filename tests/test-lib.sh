@@ -219,6 +219,66 @@ check_false "package omits the upstream updater sidecar" \
   grep -q "sidecar-updater" "$nomad_compose"
 
 # ---------------------------------------------------------------------------
+printf '\nRuntipi app identity matching\n'
+# shellcheck source=lib/runtipi.sh
+source "${US_LIB_DIR}/runtipi.sh" 2>/dev/null
+
+# These payloads are the reason this section exists. Matching only
+# `.installed[].app.urn` made an installed, running AdGuard read as "never
+# appeared" — a state the wait loop could not distinguish from a slow image
+# pull, so it waited out the full timeout and then blamed the install. Runtipi
+# has expressed app identity three ways across 4.x, and any of them must
+# resolve to the same answer. If upstream adds a fourth, a test here fails
+# before an operator loses fifteen minutes to a silent poll.
+if us_have jq; then
+  urn_shape='{"installed":[{"app":{"urn":"adguard:migrated","status":"running"}}]}'
+  split_shape='{"installed":[{"app":{"appName":"adguard","appStoreSlug":"migrated","status":"running"}}]}'
+  id_shape='{"installed":[{"app":{"id":"adguard:migrated","status":"starting"}}]}'
+  bare_array='[{"app":{"urn":"adguard:migrated","status":"running"}}]'
+  flat_shape='{"apps":[{"urn":"adguard:migrated","status":"running"}]}'
+
+  check "status from an explicit urn field" "running" \
+    "$(us_runtipi_app_status_from "$urn_shape" "adguard:migrated")"
+  check "status from appName + appStoreSlug" "running" \
+    "$(us_runtipi_app_status_from "$split_shape" "adguard:migrated")"
+  check "status from an id that is the urn" "starting" \
+    "$(us_runtipi_app_status_from "$id_shape" "adguard:migrated")"
+  check "status from a bare array container" "running" \
+    "$(us_runtipi_app_status_from "$bare_array" "adguard:migrated")"
+  check "status from a flat record under .apps" "running" \
+    "$(us_runtipi_app_status_from "$flat_shape" "adguard:migrated")"
+
+  check_true "presence is detected via appName + appStoreSlug" \
+    us_runtipi_app_present_in "$split_shape" "adguard:migrated"
+  check_false "a different app is not a match" \
+    us_runtipi_app_present_in "$split_shape" "nomad:u-server"
+
+  # The store slug is discovered, not fixed, so the same app under a different
+  # slug must be found by name — that is what stops a second install being
+  # posted for an app Runtipi already has.
+  check "recorded urn is found by app name" "adguard:migrated" \
+    "$(us_runtipi_app_urn_from "$split_shape" "adguard")"
+  check "recorded urn is found by name from a urn field" "adguard:migrated" \
+    "$(us_runtipi_app_urn_from "$urn_shape" "adguard")"
+  check "an uninstalled app yields no urn" "" \
+    "$(us_runtipi_app_urn_from "$urn_shape" "nomad")"
+
+  # Malformed or empty payloads must answer "absent", never error out: the
+  # callers treat a non-answer as "keep waiting", and a jq crash there is
+  # indistinguishable from an app that is genuinely missing.
+  check "empty installed list yields no status" "" \
+    "$(us_runtipi_app_status_from '{"installed":[]}' "adguard:migrated")"
+  check "unrecognised shape yields no status" "" \
+    "$(us_runtipi_app_status_from '{"something":"else"}' "adguard:migrated")"
+  check "record with no identity yields no status" "" \
+    "$(us_runtipi_app_status_from '{"installed":[{"app":{"status":"running"}}]}' "adguard:migrated")"
+  check "non-JSON yields no status" "" \
+    "$(us_runtipi_app_status_from 'not json at all' "adguard:migrated")"
+else
+  printf '  skip jq not installed; app identity matching not exercised\n'
+fi
+
+# ---------------------------------------------------------------------------
 printf '\nset -e safety\n'
 # `((n++))` evaluates to the value BEFORE incrementing, and an arithmetic
 # command whose result is 0 exits 1. Every counter in this repo starts at 0, so
