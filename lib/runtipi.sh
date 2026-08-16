@@ -25,6 +25,15 @@
 #     subject "cli" from JWT_SECRET in <data>/.env. We reproduce that exactly,
 #     which lets us drive endpoints the CLI has no subcommand for — notably
 #     app installation. (runtipi/cli internal/utils/api.go)
+#
+#   * HTTPS is always on and always redirected to. Locally-exposed apps get a
+#     websecure router with `tls: true` and no certresolver, and their web
+#     router carries a `redirectscheme` middleware; the dashboard is labelled
+#     identically. Those routers serve Traefik's default certificate, which
+#     Runtipi points at <data>/traefik/tls/{cert,key}.pem and fills with a
+#     self-signed pair. lib/tls.sh replaces that pair; see the TLS helpers
+#     below. (traefik-labels.builder.ts, docker-compose.prod.yml,
+#     assets/traefik/dynamic/dynamic.yml, app.service.ts)
 
 [[ -n "${_US_RUNTIPI_SOURCED:-}" ]] && return 0
 _US_RUNTIPI_SOURCED=1
@@ -72,6 +81,31 @@ us_runtipi_settings_file() { printf '%s/state/settings.json' "$(us_runtipi_data_
 us_runtipi_traefik_dynamic_dir() { printf '%s/traefik/dynamic' "$(us_runtipi_data_dir)"; }
 us_runtipi_appdata_dir() { printf '%s/app-data' "$(us_runtipi_data_dir)"; }
 us_runtipi_repos_dir() { printf '%s/repos' "$(us_runtipi_data_dir)"; }
+
+# The certificate slot. Runtipi's shipped traefik/dynamic/dynamic.yml sets
+#     tls.stores.default.defaultCertificate: {certFile, keyFile}
+# to /etc/traefik/tls/{cert,key}.pem, and docker-compose.prod.yml bind-mounts
+# <data>/traefik to /etc/traefik in the proxy container. So these two files are
+# what every `tls: true` router serves. lib/tls.sh replaces their contents.
+us_runtipi_traefik_tls_dir() { printf '%s/traefik/tls' "$(us_runtipi_data_dir)"; }
+
+# us_runtipi_tls_marker_file <local-domain>
+# The file whose mere existence tells Runtipi a certificate for this domain is
+# already present, so generateTlsCertificates() returns instead of overwriting
+# it with a self-signed one (app.service.ts). Named after the domain because
+# that is what upstream keys it on: changing localDomain intentionally
+# invalidates the marker and triggers regeneration.
+us_runtipi_tls_marker_file() {
+  printf '%s/%s.txt' "$(us_runtipi_traefik_tls_dir)" "$1"
+}
+
+# The reverse proxy's container name (docker-compose.prod.yml). Named here
+# rather than spelled out at each call site because it is upstream's choice,
+# not ours, and this file is where upstream's choices are allowed to live.
+#
+# shellcheck disable=SC2034  # consumed by lib/tls.sh, status.sh and the verify
+# stage, which source this file; shellcheck analyses each file in isolation.
+US_RUNTIPI_PROXY_CONTAINER="runtipi-reverse-proxy"
 
 # ---------------------------------------------------------------------------
 # Release assets

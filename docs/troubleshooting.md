@@ -231,6 +231,62 @@ route.
 
 ---
 
+## HTTPS
+
+### The browser warns about the certificate on every service
+
+Expected on a stock install, and the warning is correct. Runtipi routes every
+locally-exposed app through TLS and redirects HTTP to it, then serves a
+self-signed certificate. The traffic is encrypted; nothing vouches for the
+identity.
+
+Set `ENABLE_LOCAL_HTTPS=true`, rerun `sudo ./install.sh`, and install the
+printed CA on each device. See [https.md](https.md).
+
+### I typed `http://` and got `https://`
+
+Not this installer. Runtipi attaches a `redirectscheme` middleware to the
+plain-HTTP router of every locally-exposed app and to the dashboard
+(`traefik-labels.builder.ts`, `docker-compose.prod.yml`). There is no setting
+here that turns it off.
+
+### Warnings came back after they had stopped
+
+Something removed the marker file, so Runtipi regenerated its own self-signed
+certificate over yours on its next restart. Check it:
+
+```bash
+sudo ./doctor.sh --tls
+```
+
+Look for `MISSING` against `home.arpa.txt`, then rerun `sudo scripts/60-tls.sh`.
+
+The other cause is an expired certificate: Runtipi replaces any cert within 24
+hours of expiry. `./status.sh` reports days remaining. If it ran low, the
+renewal timer is not running — most often because the repository was moved or
+deleted, since the unit points at `scripts/60-tls.sh` inside it:
+
+```bash
+systemctl status u-server-tls-renew.timer
+journalctl -u u-server-tls-renew.service
+```
+
+### One device still warns when the others are fine
+
+Firefox keeps its own certificate store and ignores the system one. On macOS
+and iOS, adding the CA and *trusting* it are separate steps. See the table in
+[https.md](https.md).
+
+### Can I just use Let's Encrypt?
+
+Not for `home.arpa`. RFC 8375 reserves it as non-delegable, so neither ACME
+challenge can be satisfied — there is no registrar or authoritative nameserver
+to prove control through. Public certificates require moving `LOCAL_DOMAIN` to
+a domain you own, which relocates every app; [https.md](https.md) sets out that
+trade.
+
+---
+
 ## Applications
 
 ### App stuck "installing"

@@ -23,6 +23,8 @@ source "${US_LIB_DIR}/docker.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
+# shellcheck source=lib/tls.sh
+source "${US_LIB_DIR}/tls.sh"
 
 us_init "doctor"
 us_config_load
@@ -152,6 +154,85 @@ if want traefik; then
   else
     printf '  Traefik API not reachable on 127.0.0.1:8080.\n'
     printf '  Check: docker ps | grep reverse-proxy\n'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+if want tls; then
+  section "TLS"
+  tls_dir="$(us_runtipi_traefik_tls_dir)"
+  marker="$(us_runtipi_tls_marker_file "$LOCAL_DOMAIN")"
+
+  printf '  ENABLE_LOCAL_HTTPS=%s\n' "$ENABLE_LOCAL_HTTPS"
+  printf '\n  Every route redirects to HTTPS regardless of this setting — that is\n'
+  printf '  Runtipi routing, not a choice made here. The setting only decides\n'
+  printf '  whether the certificate is one your devices can be told to trust.\n'
+
+  printf '\n  Certificate slot (%s):\n' "$tls_dir"
+  for f in cert.pem key.pem; do
+    if [[ -f "${tls_dir}/${f}" ]]; then
+      printf '    %-10s present  (%s)\n' "$f" "$(stat -c '%a %U' "${tls_dir}/${f}" 2>/dev/null || echo '?')"
+    else
+      printf '    %-10s MISSING\n' "$f"
+    fi
+  done
+  # Without this file Runtipi rewrites cert.pem with a self-signed certificate
+  # on its next restart, and the only symptom is that the warnings return.
+  if [[ -f "$marker" ]]; then
+    printf '    %-10s present  (stops Runtipi regenerating over it)\n' "${marker##*/}"
+  else
+    printf '    %-10s MISSING  — Runtipi will overwrite cert.pem on next restart\n' "${marker##*/}"
+  fi
+
+  printf '\n  Local CA (%s):\n' "$US_TLS_CA_CRT"
+  if [[ -f "$US_TLS_CA_CRT" ]]; then
+    printf '    subject     %s\n' "$(openssl x509 -noout -subject -in "$US_TLS_CA_CRT" 2>/dev/null | cut -d= -f2-)"
+    printf '    expires in  %s day(s)\n' "$(us_tls_days_remaining "$US_TLS_CA_CRT" 2>/dev/null || echo '?')"
+    printf '    sha256      %s\n' "$(us_tls_fingerprint "$US_TLS_CA_CRT" 2>/dev/null || echo '?')"
+    if [[ -f "$US_TLS_HOST_ANCHOR" ]]; then
+      printf '    host trust  installed at %s\n' "$US_TLS_HOST_ANCHOR"
+    else
+      printf '    host trust  NOT installed (curl from this host needs -k)\n'
+    fi
+  else
+    printf '    (none — ENABLE_LOCAL_HTTPS has never been turned on)\n'
+  fi
+
+  printf '\n  Server certificate (%s):\n' "$US_TLS_LEAF_CRT"
+  if [[ -f "$US_TLS_LEAF_CRT" ]]; then
+    printf '    names       %s\n' "$(us_tls_cert_san "$US_TLS_LEAF_CRT" 2>/dev/null || echo '?')"
+    printf '    wanted      %s\n' "$(us_tls_desired_san "$LOCAL_DOMAIN" "$LAN_IP")"
+    printf '    expires in  %s day(s)  (reissued below %s)\n' \
+      "$(us_tls_days_remaining "$US_TLS_LEAF_CRT" 2>/dev/null || echo '?')" \
+      "$US_TLS_RENEW_BEFORE_DAYS"
+    if us_tls_signed_by "$US_TLS_LEAF_CRT" "$US_TLS_CA_CRT"; then
+      printf '    chain       verifies against the local CA\n'
+    else
+      printf '    chain       DOES NOT verify against %s\n' "$US_TLS_CA_CRT"
+    fi
+  else
+    printf '    (none)\n'
+  fi
+
+  # What a browser gets, which is the only claim that finally matters.
+  printf '\n  Served on %s:443 (SNI %s):\n' "$LAN_IP" "$LOCAL_DOMAIN"
+  served="$(us_tls_served_issuer "$LAN_IP" "$LOCAL_DOMAIN" 2>/dev/null || true)"
+  printf '    issuer      %s\n' "${served:-<no TLS response>}"
+  if us_tls_https_trusted "$LAN_IP" "$LOCAL_DOMAIN"; then
+    printf '    trusted     yes, against the trust store on this host\n'
+  else
+    printf '    trusted     no — a client without the CA would warn\n'
+  fi
+
+  printf '\n  Renewal timer:\n'
+  if us_have systemctl; then
+    systemctl list-timers "${US_TLS_RENEW_UNIT}.timer" --all --no-pager 2>/dev/null |
+      sed -n '1,3p' | sed 's/^/    /' || true
+    state="$(systemctl is-failed "${US_TLS_RENEW_UNIT}.service" 2>/dev/null || true)"
+    [[ "$state" == "failed" ]] &&
+      printf '    LAST RUN FAILED: journalctl -u %s.service\n' "$US_TLS_RENEW_UNIT"
+  else
+    printf '    systemd not available; renewal must be run by hand.\n'
   fi
 fi
 

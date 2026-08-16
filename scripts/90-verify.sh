@@ -21,6 +21,8 @@ source "${US_LIB_DIR}/versions.sh"
 source "${US_LIB_DIR}/runtipi.sh"
 # shellcheck source=lib/adguard.sh
 source "${US_LIB_DIR}/adguard.sh"
+# shellcheck source=lib/tls.sh
+source "${US_LIB_DIR}/tls.sh"
 
 us_init "verify"
 us_config_load
@@ -101,6 +103,54 @@ check_route() {
 
 check_route "$LOCAL_DOMAIN" "(Runtipi dashboard)"
 us_config_is_true "$INSTALL_ADGUARD" && check_route "$DNS_DOMAIN" "(AdGuard)"
+
+# --- TLS -------------------------------------------------------------------
+# Those routes answer 301 because Traefik redirects to HTTPS unconditionally,
+# so what the TLS side presents is part of whether the platform works, not an
+# optional extra.
+printf '\nTLS\n' >&2
+if ! us_config_is_true "$ENABLE_LOCAL_HTTPS"; then
+  us_status_skip "local CA disabled; Traefik serves Runtipi's self-signed certificate"
+  printf '    Browsers will warn on every service. See docs/https.md.\n' >&2
+else
+  if [[ -f "$US_TLS_CA_CRT" ]]; then
+    us_status_ok "Local CA present ($(us_tls_days_remaining "$US_TLS_CA_CRT") days left)"
+  else
+    note_fail "ENABLE_LOCAL_HTTPS is true but there is no CA at ${US_TLS_CA_CRT}"
+  fi
+
+  if leaf_days="$(us_tls_days_remaining "$US_TLS_LEAF_CRT" 2>/dev/null)"; then
+    # Under 1 day is the cliff: Runtipi's own -checkend 86400 test starts
+    # failing there and it overwrites our certificate with a self-signed one.
+    if ((leaf_days < 1)); then
+      note_fail "Server certificate has under a day left; Runtipi will replace it with a self-signed one"
+    elif ((leaf_days < US_TLS_RENEW_BEFORE_DAYS)); then
+      us_status_warn "Server certificate expires in ${leaf_days} day(s); renewal is overdue"
+      printf '    Check the timer:  systemctl status %s.timer\n' "$US_TLS_RENEW_UNIT" >&2
+    else
+      us_status_ok "Server certificate valid for ${leaf_days} more day(s)"
+    fi
+  else
+    note_fail "No server certificate at ${US_TLS_LEAF_CRT}"
+  fi
+
+  issuer="$(us_tls_served_issuer "$LAN_IP" "$LOCAL_DOMAIN" 2>/dev/null || true)"
+  if [[ "$issuer" == *"${US_PROJECT_NAME} Local CA"* ]]; then
+    us_status_ok "Traefik is serving the local CA's certificate"
+  elif [[ -n "$issuer" ]]; then
+    note_fail "Traefik is serving a certificate issued by: ${issuer}"
+    printf '    Expected the local CA. If Runtipi regenerated it, the marker file\n' >&2
+    printf '    %s is missing.\n' "$(us_runtipi_tls_marker_file "$LOCAL_DOMAIN")" >&2
+  else
+    note_fail "Nothing answered TLS on ${LAN_IP}:443"
+  fi
+
+  if us_tls_https_trusted "$LAN_IP" "$LOCAL_DOMAIN"; then
+    us_status_ok "https://${LOCAL_DOMAIN} verifies against the trust store"
+  else
+    us_status_warn "https://${LOCAL_DOMAIN} did not verify from this host"
+  fi
+fi
 
 # --- Summary ---------------------------------------------------------------
 printf '\n' >&2

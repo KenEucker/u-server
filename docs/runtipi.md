@@ -101,8 +101,10 @@ a certificate covering both forms (`app.service.ts:237`):
 subjectAltName = `DNS:*.${localDomain},DNS:${localDomain}`
 ```
 
-so enabling `ENABLE_LOCAL_HTTPS` later covers `https://home.arpa` with no
-extra work.
+Both forms are needed because a wildcard covers neither the apex in DNS
+(RFC 4592) nor the apex in TLS. `lib/tls.sh` issues the same pair of names for
+the same reason when `ENABLE_LOCAL_HTTPS=true` replaces that certificate — see
+[https.md](https.md).
 
 ### A second hostname was built, then removed
 
