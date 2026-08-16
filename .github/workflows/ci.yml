@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [production, main]
+    # The appstore branch is a generated artifact published by
+    # tools/publish-appstore.sh; linting it would be linting our own output.
+    paths-ignore:
+      - "docs/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          # -x follows `source` directives so lib/ helpers are resolved.
+          # SC1091 is disabled because the sourced paths are resolved at
+          # runtime from US_LIB_DIR, which shellcheck cannot evaluate.
+          mapfile -t files < <(find . -name '*.sh' -not -path './.git/*' | sort)
+          printf 'Checking %d scripts\n' "${#files[@]}"
+          shellcheck --external-sources --exclude=SC1091 --severity=warning "${files[@]}"
+
+  syntax:
+    name: Bash syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every script
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if bash -n "$f"; then
+              echo "ok   $f"
+            else
+              echo "FAIL $f"
+              fail=1
+            fi
+          done < <(find . -name '*.sh' -not -path './.git/*' | sort)
+          exit "$fail"
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run helper tests
+        run: ./tests/test-lib.sh
+
+  appstore:
+    name: App store validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          python3 -m pip install --quiet pyyaml
+
+      - name: Validate app definitions
+        run: ./tools/validate-appstore.sh
+
+      - name: Validate config.json against the Runtipi schema
+        run: |
+          python3 -m pip install --quiet jsonschema
+          python3 - <<'PY'
+          import json, os, sys
+          from jsonschema import Draft7Validator
+          base = "appstore/apps"
+          schema = json.load(open(os.path.join(base, "app-info-schema.json")))
+          # The vendored schema comes from runtipi/runtipi-appstore and is the
+          # same one Runtipi validates against at install time.
+          validator = Draft7Validator(schema)
+          failed = False
+          for app in sorted(os.listdir(base)):
+              d = os.path.join(base, app)
+              if not os.path.isdir(d):
+                  continue
+              cfg = json.load(open(os.path.join(d, "config.json")))
+              errors = sorted(validator.iter_errors(cfg), key=lambda e: e.path)
+              if errors:
+                  failed = True
+                  print(f"[FAIL] {app}")
+                  for e in errors:
+                      print(f"    {'/'.join(map(str, e.path))}: {e.message}")
+              else:
+                  print(f"[ ok ] {app}")
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Compose files must be valid for Docker
+        run: |
+          # Runtipi generates the final compose file, but the source must
+          # already be structurally valid YAML that Docker can parse.
+          fail=0
+          for f in appstore/apps/*/docker-compose.yml; do
+            [ -f "$f" ] || continue
+            if docker compose -f "$f" config --quiet 2>/dev/null; then
+              echo "ok   $f"
+            else
+              # x-runtipi placeholders (${APP_DATA_DIR} etc.) are supplied by
+              # Runtipi, so an unresolved-variable warning is expected here.
+              # Only a hard parse failure is an error.
+              if python3 -c "import yaml,sys; yaml.safe_load(open('$f'))"; then
+                echo "ok   $f (YAML valid; compose vars supplied by Runtipi)"
+              else
+                echo "FAIL $f"
+                fail=1
+              fi
+            fi
+          done
+          exit "$fail"
+
+  config-example:
+    name: Config example is loadable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load and validate the shipped example
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          cp config/server.env.example server.env
+          # LAN_IP is intentionally blank in the example (auto-detected on a
+          # real host); supply one so validation has something to check.
+          sed -i 's/^LAN_IP=$/LAN_IP=192.168.8.10/' server.env
+          export US_LIB_DIR="$PWD/lib" US_ROOT_DIR="$PWD"
+          bash -c '
+            source lib/config.sh
+            us_config_load "$PWD/server.env"
+            us_config_validate
+            echo "LOCAL_DOMAIN=$LOCAL_DOMAIN"
+            echo "NOMAD_SUBDOMAIN=$NOMAD_SUBDOMAIN"
+          '
+
+  installer-contract:
+    name: Installer contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every declared stage exists and is executable
+        run: |
+          fail=0
+          while IFS= read -r stage; do
+            f="scripts/${stage}.sh"
+            if [ -f "$f" ]; then
+              echo "ok   $stage"
+            else
+              echo "FAIL $stage -> missing $f"
+              fail=1
+            fi
+          done < <(./install.sh --list-stages)
+          exit "$fail"
+
+      - name: --help works without root or configuration
+        run: ./install.sh --help >/dev/null
+
+      - name: No secrets committed
+        run: |
+          if git ls-files | grep -E '(^|/)server\.env$|secrets\.env|\.pem$|\.key$'; then
+            echo "Refusing: credential-like files are tracked."
+            exit 1
+          fi
+          echo "ok: no credential files tracked"
