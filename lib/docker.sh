@@ -35,12 +35,50 @@ us_docker_compose_version() {
   docker compose version --short 2>/dev/null
 }
 
-# us_docker_desktop_present - Docker Desktop manages its own engine in a VM and
-# conflicts with a host Engine install; detect and refuse rather than fight it.
-us_docker_desktop_present() {
-  [[ -e /usr/bin/docker-desktop ]] ||
-    [[ -d /opt/docker-desktop ]] ||
-    { docker context inspect desktop-linux >/dev/null 2>&1; }
+# us_docker_desktop_signal - print the Docker Desktop evidence found on this
+# host and return 0; return 1 when there is none.
+#
+# Docker Desktop manages its own engine inside a VM, with its own socket, so it
+# conflicts with a host Engine install and we refuse rather than fight it. The
+# evidence is printed because "Docker Desktop detected" on a machine the user
+# believes is clean is unactionable — they need to know what was found.
+#
+# Only two kinds of evidence count as installed-and-in-the-way:
+#   - Desktop's files on disk
+#   - the CLI *actively* pointed at Desktop's engine
+# A merely-defined desktop-linux context is not evidence; see
+# us_docker_desktop_stale_context.
+us_docker_desktop_signal() {
+  if [[ -e /usr/bin/docker-desktop ]]; then
+    printf 'the docker-desktop binary at /usr/bin/docker-desktop'
+    return 0
+  fi
+  if [[ -d /opt/docker-desktop ]]; then
+    printf 'the Docker Desktop installation at /opt/docker-desktop'
+    return 0
+  fi
+  local ctx
+  ctx="$(docker context show 2>/dev/null || true)"
+  if [[ "$ctx" == "desktop-linux" ]]; then
+    printf "the active docker context 'desktop-linux' (docker is talking to Desktop's engine)"
+    return 0
+  fi
+  return 1
+}
+
+us_docker_desktop_present() { us_docker_desktop_signal >/dev/null; }
+
+# us_docker_desktop_stale_context - a desktop-linux context definition with no
+# Docker Desktop behind it, left over from an uninstall. Not a reason to refuse
+# the install: the CLI is pointed at the host engine and everything works. Worth
+# reporting, because switching to that context later breaks every stage.
+#
+# Note this reads the *current* user's context store (~/.docker/contexts), so
+# under sudo it sees root's, not the desktop user's. Advisory only, so a miss
+# costs nothing.
+us_docker_desktop_stale_context() {
+  us_docker_desktop_present && return 1
+  docker context inspect desktop-linux >/dev/null 2>&1
 }
 
 # us_docker_repo_configure - idempotent apt repository setup.
@@ -85,8 +123,10 @@ EOF
 # us_docker_install - install Engine, CLI, containerd, buildx and the Compose
 # plugin. Safe to rerun: apt is declarative and we skip when already satisfied.
 us_docker_install() {
-  if us_docker_desktop_present; then
-    us_die "Docker Desktop detected. u-server requires Docker Engine on the host. Remove Docker Desktop first."
+  local desktop
+  if desktop="$(us_docker_desktop_signal)"; then
+    us_error "Docker Desktop detected: ${desktop}."
+    us_die "u-server requires Docker Engine on the host. Remove Docker Desktop first."
   fi
 
   if us_docker_present; then
